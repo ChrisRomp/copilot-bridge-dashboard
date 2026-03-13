@@ -1,0 +1,114 @@
+import fs from 'fs';
+import path from 'path';
+import mime from 'mime-types';
+
+export interface FileEntry {
+  name: string;
+  path: string;
+  type: 'file' | 'directory';
+  size: number;
+  modifiedAt: string;
+  mimeType?: string;
+}
+
+const BINARY_EXTENSIONS = new Set([
+  '.png', '.jpg', '.jpeg', '.gif', '.bmp', '.ico', '.webp', '.svg',
+  '.pdf', '.zip', '.gz', '.tar', '.7z', '.rar',
+  '.mp3', '.mp4', '.wav', '.avi', '.mov',
+  '.exe', '.dll', '.so', '.dylib',
+  '.woff', '.woff2', '.ttf', '.eot',
+  '.sqlite', '.db', '.db-shm', '.db-wal',
+]);
+
+const TEXT_EXTENSIONS = new Set([
+  '.txt', '.md', '.mdx', '.json', '.js', '.ts', '.tsx', '.jsx',
+  '.css', '.html', '.xml', '.yaml', '.yml', '.toml', '.ini', '.cfg', '.conf',
+  '.sh', '.bash', '.zsh', '.py', '.rb', '.go', '.rs', '.java',
+  '.c', '.h', '.cpp', '.hpp', '.cs', '.swift', '.sql',
+  '.env', '.gitignore', '.dockerignore', '.editorconfig',
+  '.log', '.csv', '.diff', '.patch', '.graphql',
+  '.makefile', '.dockerfile',
+]);
+
+export function listDirectory(dirPath: string, showHidden = false): FileEntry[] {
+  const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+  return entries
+    .filter((e) => showHidden || !e.name.startsWith('.'))
+    .map((entry) => {
+      const fullPath = path.join(dirPath, entry.name);
+      const stat = fs.statSync(fullPath);
+      const ext = path.extname(entry.name).toLowerCase();
+      return {
+        name: entry.name,
+        path: fullPath,
+        type: entry.isDirectory() ? 'directory' as const : 'file' as const,
+        size: stat.size,
+        modifiedAt: stat.mtime.toISOString(),
+        mimeType: entry.isFile() ? (mime.lookup(entry.name) || 'application/octet-stream') : undefined,
+      };
+    })
+    .sort((a, b) => {
+      if (a.type !== b.type) return a.type === 'directory' ? -1 : 1;
+      return a.name.localeCompare(b.name);
+    });
+}
+
+export function isTextFile(filePath: string): boolean {
+  const ext = path.extname(filePath).toLowerCase();
+  if (BINARY_EXTENSIONS.has(ext)) return false;
+
+  // Known text extension — quick accept
+  if (TEXT_EXTENSIONS.has(ext)) return true;
+
+  // Check compound extensions: .md.example → check .md, .json.bak → check .json
+  const basename = path.basename(filePath);
+  const parts = basename.split('.');
+  if (parts.length > 2) {
+    for (let i = 1; i < parts.length - 1; i++) {
+      const innerExt = '.' + parts[i].toLowerCase();
+      if (TEXT_EXTENSIONS.has(innerExt)) return true;
+      if (BINARY_EXTENSIONS.has(innerExt)) return false;
+    }
+  }
+
+  // Dotfiles with no extension (e.g., .gitignore, .env) — treat as text
+  if (basename.startsWith('.') && parts.length <= 2) return true;
+
+  // Unknown extension — probe first bytes for binary content (null bytes)
+  try {
+    const fd = fs.openSync(filePath, 'r');
+    const buf = Buffer.alloc(512);
+    const bytesRead = fs.readSync(fd, buf, 0, 512, 0);
+    fs.closeSync(fd);
+    for (let i = 0; i < bytesRead; i++) {
+      if (buf[i] === 0) return false;
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function readTextFile(filePath: string, maxBytes = 1024 * 1024): { content: string; truncated: boolean } {
+  const stat = fs.statSync(filePath);
+  const truncated = stat.size > maxBytes;
+  const fd = fs.openSync(filePath, 'r');
+  const buffer = Buffer.alloc(Math.min(stat.size, maxBytes));
+  fs.readSync(fd, buffer, 0, buffer.length, 0);
+  fs.closeSync(fd);
+  return { content: buffer.toString('utf-8'), truncated };
+}
+
+export function isPathSafe(requestedPath: string, allowedRoot: string): boolean {
+  if (!requestedPath || !requestedPath.startsWith('/')) return false;
+  // Resolve symlinks to prevent escape via symlinked directories
+  let resolved: string;
+  try {
+    resolved = fs.realpathSync(requestedPath);
+  } catch {
+    // Path doesn't exist yet (e.g., upload target) — fall back to lexical resolve
+    resolved = path.resolve(requestedPath);
+  }
+  const root = fs.realpathSync(allowedRoot);
+  return resolved === root || resolved.startsWith(root + path.sep);
+}
