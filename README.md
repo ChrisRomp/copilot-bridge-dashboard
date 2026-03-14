@@ -85,7 +85,7 @@ the-bridge/
 
 - **Path traversal protection** — file routes resolve user input relative to bridge home (`path.resolve(ROOT, relPath)`), resolve symlinks (`fs.realpathSync`), and verify the result starts with `ROOT + path.sep` (boundary-aware check prevents prefix collisions)
 - **Rate limiting** — global (300 req/min), API (120 req/min), login (15 req/15min)
-- **CORS** — restricted to localhost origins
+- **CORS** — restricted to localhost origins by default (expands to the configured host when `BRIDGE_DASH_HOST` is set)
 - **WebSocket auth** — validates session cookies on connection
 - **Token sanitization** — API keys and bot tokens are stripped from config responses
 - **Upload safety** — filenames sanitized with `path.basename()`, 50MB limit
