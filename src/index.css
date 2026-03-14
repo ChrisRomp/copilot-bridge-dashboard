@@ -240,32 +240,106 @@ a:hover {
 
 /* Responsive */
 @media (max-width: 768px) {
+  .app-layout {
+    flex-direction: column;
+  }
+
   .sidebar {
     width: 100%;
     height: auto;
-    position: relative;
+    position: sticky;
+    top: 0;
+    left: unset;
+    bottom: unset;
+    z-index: 10;
     border-right: none;
     border-bottom: 1px solid var(--border);
+  }
+
+  .sidebar-header {
+    height: 44px;
+    padding: 0 16px;
+    font-size: 16px;
   }
 
   .sidebar-nav {
     flex-direction: row;
     overflow-x: auto;
-    padding: 8px;
+    padding: 4px 8px 8px;
+    gap: 0;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .sidebar-nav::-webkit-scrollbar {
+    display: none;
   }
 
   .nav-link {
     white-space: nowrap;
-    padding: 8px 12px;
+    padding: 6px 10px;
+    font-size: 13px;
+    gap: 6px;
+    border-radius: 6px;
+    flex-shrink: 0;
+  }
+
+  .nav-icon {
+    font-size: 15px;
+    width: 18px;
   }
 
   .main-content {
     margin-left: 0;
     padding: 16px;
+    width: 100%;
+    max-width: 100vw;
   }
 
   .card-grid {
     grid-template-columns: 1fr;
+  }
+
+  .page-header h1 {
+    font-size: 20px;
+  }
+
+  .stat-value {
+    font-size: 24px;
+  }
+
+  /* Tables: horizontal scroll wrapper */
+  .card:has(.data-table) {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .data-table th,
+  .data-table td {
+    padding: 10px 12px;
+    font-size: 13px;
+  }
+
+  .filter-input {
+    width: 100%;
+  }
+
+  .toolbar {
+    flex-wrap: wrap;
+  }
+
+  /* File browser */
+  .file-meta {
+    display: none;
+  }
+
+  .breadcrumb {
+    font-size: 13px;
+  }
+
+  /* Code viewer */
+  .code-block {
+    font-size: 12px;
+    padding: 12px;
   }
 }
 
