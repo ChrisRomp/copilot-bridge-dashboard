@@ -231,28 +231,36 @@ function queryString(param: unknown): string {
   return typeof param === 'string' ? param : '';
 }
 
+/**
+ * Convert user-provided path to a safe relative path under bridge home.
+ * Strips bridgeHome prefix if present, removes leading slashes.
+ */
+function toRelativePath(raw: string): string {
+  let rel = raw;
+  if (rel.startsWith(paths.bridgeHome)) {
+    rel = rel.slice(paths.bridgeHome.length);
+  }
+  // Remove leading slashes so path.resolve treats it as relative to root
+  return rel.replace(/^[/\\]+/, '') || '.';
+}
+
 // --- File browser ---
 router.get('/files', (req, res) => {
   try {
-    const rawPath = queryString(req.query.path) || paths.bridgeHome;
+    const rawPath = queryString(req.query.path);
     const showHidden = req.query.hidden === '1' || req.query.hidden === 'true';
-    // Normalize and validate the path is within bridge home
-    const normalizedPath = path.normalize(rawPath);
-    // Reject paths with '..' segments
-    if (normalizedPath.split(path.sep).includes('..')) {
-      res.status(403).json({ error: 'Access denied: path traversal' });
-      return;
-    }
-    // Validate prefix containment
-    if (!normalizedPath.startsWith(paths.bridgeHome + path.sep) && normalizedPath !== paths.bridgeHome) {
+    // CodeQL-recommended pattern: resolve relative to root, realpath, then startsWith check
+    const relPath = toRelativePath(rawPath);
+    const filePath = fs.realpathSync(path.resolve(paths.bridgeHome, relPath));
+    if (!filePath.startsWith(paths.bridgeHome)) {
       res.status(403).json({ error: 'Access denied: path outside bridge home' });
       return;
     }
-    const stat = fs.statSync(normalizedPath);
+    const stat = fs.statSync(filePath);
     if (stat.isDirectory()) {
-      res.json({ type: 'directory', entries: listDirectory(normalizedPath, showHidden) });
-    } else if (isTextFile(normalizedPath)) {
-      const { content, truncated } = readTextFile(normalizedPath);
+      res.json({ type: 'directory', entries: listDirectory(filePath, showHidden) });
+    } else if (isTextFile(filePath)) {
+      const { content, truncated } = readTextFile(filePath);
       res.json({ type: 'file', content, truncated, mimeType: 'text/plain' });
     } else {
       res.json({ type: 'file', binary: true, size: stat.size });
@@ -273,18 +281,19 @@ router.get('/files/download', (req, res) => {
       res.status(403).json({ error: 'Access denied' });
       return;
     }
-    const normalizedPath = path.normalize(rawPath);
-    if (normalizedPath.split(path.sep).includes('..')) {
-      res.status(403).json({ error: 'Access denied: path traversal' });
-      return;
-    }
-    if (!normalizedPath.startsWith(paths.bridgeHome + path.sep) && normalizedPath !== paths.bridgeHome) {
+    const relPath = toRelativePath(rawPath);
+    const filePath = fs.realpathSync(path.resolve(paths.bridgeHome, relPath));
+    if (!filePath.startsWith(paths.bridgeHome)) {
       res.status(403).json({ error: 'Access denied' });
       return;
     }
-    res.download(normalizedPath);
+    res.download(filePath);
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    if (err.code === 'ENOENT') {
+      res.status(404).json({ error: 'Not found' });
+    } else {
+      res.status(500).json({ error: err.message });
+    }
   }
 });
 
@@ -292,18 +301,21 @@ router.get('/files/download', (req, res) => {
 const upload = multer({
   storage: multer.diskStorage({
     destination: (req, _file, cb) => {
-      const rawPath = queryString(req.query.path) || paths.bridgeHome;
-      const normalizedPath = path.normalize(rawPath);
-      if (normalizedPath.split(path.sep).includes('..')) {
-        cb(new Error('Access denied: path traversal'), '');
+      const rawPath = queryString(req.query.path);
+      const relPath = toRelativePath(rawPath);
+      let dirPath: string;
+      try {
+        dirPath = fs.realpathSync(path.resolve(paths.bridgeHome, relPath));
+      } catch {
+        cb(new Error('Target directory does not exist'), '');
         return;
       }
-      if (!normalizedPath.startsWith(paths.bridgeHome + path.sep) && normalizedPath !== paths.bridgeHome) {
+      if (!dirPath.startsWith(paths.bridgeHome)) {
         cb(new Error('Access denied: path outside bridge home'), '');
         return;
       }
       try {
-        const stat = fs.statSync(normalizedPath);
+        const stat = fs.statSync(dirPath);
         if (!stat.isDirectory()) {
           cb(new Error('Target is not a directory'), '');
           return;
@@ -312,7 +324,7 @@ const upload = multer({
         cb(new Error('Target directory does not exist'), '');
         return;
       }
-      cb(null, normalizedPath);
+      cb(null, dirPath);
     },
     filename: (_req, file, cb) => {
       // Strip directory components to prevent path traversal
