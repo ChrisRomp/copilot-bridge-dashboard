@@ -225,40 +225,34 @@ router.get('/logs/tail', (req, res) => {
   }
 });
 
-/**
- * Takes a user-provided path (absolute or relative) and returns a safe
- * absolute path within the bridge home directory, or null if unsafe.
- * Absolute paths starting with bridgeHome are converted to relative first.
- * Rejects any path containing '..' to prevent traversal.
- */
-function resolveToSafePath(raw: string, bridgeHome: string): string | null {
-  if (!raw) return bridgeHome;
-  // Convert absolute paths to relative (backward compat with clients sending absolute)
-  let relPath = raw.startsWith(bridgeHome) ? raw.slice(bridgeHome.length) : raw;
-  // Reject directory traversal
-  if (relPath.includes('..')) return null;
-  // Reject absolute paths that weren't under bridgeHome
-  if (path.isAbsolute(relPath)) return null;
-  // Strip leading slashes and build from constant root
-  relPath = relPath.replace(/^\/+/, '');
-  return relPath ? path.join(bridgeHome, relPath) : bridgeHome;
+/** Extract a single string from a query parameter (handles arrays from type confusion). */
+function queryString(param: unknown): string {
+  if (Array.isArray(param)) return String(param[0] ?? '');
+  return typeof param === 'string' ? param : '';
 }
 
 // --- File browser ---
 router.get('/files', (req, res) => {
   try {
-    const rawPath = (req.query.path as string) || '';
+    const rawPath = queryString(req.query.path) || paths.bridgeHome;
     const showHidden = req.query.hidden === '1' || req.query.hidden === 'true';
-    const resolvedPath = resolveToSafePath(rawPath, paths.bridgeHome);
-    if (!resolvedPath) {
+    // Normalize and validate the path is within bridge home
+    const normalizedPath = path.normalize(rawPath);
+    // Reject paths with '..' segments
+    if (normalizedPath.split(path.sep).includes('..')) {
+      res.status(403).json({ error: 'Access denied: path traversal' });
+      return;
+    }
+    // Validate prefix containment
+    if (!normalizedPath.startsWith(paths.bridgeHome + path.sep) && normalizedPath !== paths.bridgeHome) {
       res.status(403).json({ error: 'Access denied: path outside bridge home' });
       return;
     }
-    const stat = fs.statSync(resolvedPath);
+    const stat = fs.statSync(normalizedPath);
     if (stat.isDirectory()) {
-      res.json({ type: 'directory', entries: listDirectory(resolvedPath, showHidden) });
-    } else if (isTextFile(resolvedPath)) {
-      const { content, truncated } = readTextFile(resolvedPath);
+      res.json({ type: 'directory', entries: listDirectory(normalizedPath, showHidden) });
+    } else if (isTextFile(normalizedPath)) {
+      const { content, truncated } = readTextFile(normalizedPath);
       res.json({ type: 'file', content, truncated, mimeType: 'text/plain' });
     } else {
       res.json({ type: 'file', binary: true, size: stat.size });
@@ -274,13 +268,21 @@ router.get('/files', (req, res) => {
 
 router.get('/files/download', (req, res) => {
   try {
-    const rawPath = (req.query.path as string) || '';
-    const resolvedPath = resolveToSafePath(rawPath, paths.bridgeHome);
-    if (!resolvedPath) {
+    const rawPath = queryString(req.query.path);
+    if (!rawPath) {
       res.status(403).json({ error: 'Access denied' });
       return;
     }
-    res.download(resolvedPath);
+    const normalizedPath = path.normalize(rawPath);
+    if (normalizedPath.split(path.sep).includes('..')) {
+      res.status(403).json({ error: 'Access denied: path traversal' });
+      return;
+    }
+    if (!normalizedPath.startsWith(paths.bridgeHome + path.sep) && normalizedPath !== paths.bridgeHome) {
+      res.status(403).json({ error: 'Access denied' });
+      return;
+    }
+    res.download(normalizedPath);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -290,14 +292,18 @@ router.get('/files/download', (req, res) => {
 const upload = multer({
   storage: multer.diskStorage({
     destination: (req, _file, cb) => {
-      const rawPath = (req.query.path as string) || '';
-      const resolvedDir = resolveToSafePath(rawPath, paths.bridgeHome);
-      if (!resolvedDir) {
+      const rawPath = queryString(req.query.path) || paths.bridgeHome;
+      const normalizedPath = path.normalize(rawPath);
+      if (normalizedPath.split(path.sep).includes('..')) {
+        cb(new Error('Access denied: path traversal'), '');
+        return;
+      }
+      if (!normalizedPath.startsWith(paths.bridgeHome + path.sep) && normalizedPath !== paths.bridgeHome) {
         cb(new Error('Access denied: path outside bridge home'), '');
         return;
       }
       try {
-        const stat = fs.statSync(resolvedDir);
+        const stat = fs.statSync(normalizedPath);
         if (!stat.isDirectory()) {
           cb(new Error('Target is not a directory'), '');
           return;
@@ -306,7 +312,7 @@ const upload = multer({
         cb(new Error('Target directory does not exist'), '');
         return;
       }
-      cb(null, resolvedDir);
+      cb(null, normalizedPath);
     },
     filename: (_req, file, cb) => {
       // Strip directory components to prevent path traversal

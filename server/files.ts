@@ -31,12 +31,10 @@ const TEXT_EXTENSIONS = new Set([
 ]);
 
 export function listDirectory(dirPath: string, showHidden = false): FileEntry[] {
-  if (dirPath.includes('..')) throw new Error('Path traversal not allowed');
   const entries = fs.readdirSync(dirPath, { withFileTypes: true });
   return entries
     .filter((e) => showHidden || !e.name.startsWith('.'))
     .map((entry) => {
-      // entry.name comes from the filesystem, not user input
       const fullPath = path.join(dirPath, entry.name);
       const stat = fs.statSync(fullPath);
       const ext = path.extname(entry.name).toLowerCase();
@@ -56,7 +54,6 @@ export function listDirectory(dirPath: string, showHidden = false): FileEntry[] 
 }
 
 export function isTextFile(filePath: string): boolean {
-  if (filePath.includes('..')) return false;
   const ext = path.extname(filePath).toLowerCase();
   if (BINARY_EXTENSIONS.has(ext)) return false;
 
@@ -93,7 +90,6 @@ export function isTextFile(filePath: string): boolean {
 }
 
 export function readTextFile(filePath: string, maxBytes = 1024 * 1024): { content: string; truncated: boolean } {
-  if (filePath.includes('..')) throw new Error('Path traversal not allowed');
   const stat = fs.statSync(filePath);
   const truncated = stat.size > maxBytes;
   const fd = fs.openSync(filePath, 'r');
@@ -111,6 +107,9 @@ export function readTextFile(filePath: string, maxBytes = 1024 * 1024): { conten
  */
 export function safePath(requestedPath: string, allowedRoot: string): string | null {
   if (!requestedPath || !path.isAbsolute(requestedPath)) return null;
+  // Check for '..' path segments (segment-based to avoid false positives on filenames like my..notes.txt)
+  const segments = path.normalize(requestedPath).split(path.sep);
+  if (segments.includes('..')) return null;
   // Resolve symlinks to prevent escape via symlinked directories
   let resolved: string;
   try {
@@ -119,7 +118,13 @@ export function safePath(requestedPath: string, allowedRoot: string): string | n
     // Path doesn't exist yet (e.g., upload target) — fall back to lexical resolve
     resolved = path.resolve(requestedPath);
   }
-  const root = fs.realpathSync(allowedRoot);
+  let root: string;
+  try {
+    root = fs.realpathSync(allowedRoot);
+  } catch {
+    // Root doesn't exist — fall back to lexical resolve
+    root = path.resolve(allowedRoot);
+  }
   if (resolved === root || resolved.startsWith(root + path.sep)) return resolved;
   return null;
 }
