@@ -21,6 +21,10 @@ import fs from 'fs';
 
 const router = Router();
 
+// Realpath the root once so symlinked COPILOT_BRIDGE_HOME compares correctly
+// against realpathSync'd file paths in route handlers.
+const ROOT = fs.realpathSync(paths.bridgeHome);
+
 // Rate limiting applied at router level (defense in depth — also applied in index.ts)
 const routerLimiter = rateLimit({
   windowMs: 60 * 1000,
@@ -237,8 +241,8 @@ function queryString(param: unknown): string {
  */
 function toRelativePath(raw: string): string {
   let rel = raw;
-  if (rel.startsWith(paths.bridgeHome)) {
-    rel = rel.slice(paths.bridgeHome.length);
+  if (rel.startsWith(ROOT)) {
+    rel = rel.slice(ROOT.length);
   }
   // Remove leading slashes so path.resolve treats it as relative to root
   return rel.replace(/^[/\\]+/, '') || '.';
@@ -251,8 +255,8 @@ router.get('/files', (req, res) => {
     const showHidden = req.query.hidden === '1' || req.query.hidden === 'true';
     // CodeQL-recommended pattern: resolve relative to root, realpath, then startsWith check
     const relPath = toRelativePath(rawPath);
-    const filePath = fs.realpathSync(path.resolve(paths.bridgeHome, relPath));
-    if (!filePath.startsWith(paths.bridgeHome)) {
+    const filePath = fs.realpathSync(path.resolve(ROOT, relPath));
+    if (filePath !== ROOT && !filePath.startsWith(ROOT + path.sep)) {
       res.status(403).json({ error: 'Access denied: path outside bridge home' });
       return;
     }
@@ -282,8 +286,8 @@ router.get('/files/download', (req, res) => {
       return;
     }
     const relPath = toRelativePath(rawPath);
-    const filePath = fs.realpathSync(path.resolve(paths.bridgeHome, relPath));
-    if (!filePath.startsWith(paths.bridgeHome)) {
+    const filePath = fs.realpathSync(path.resolve(ROOT, relPath));
+    if (filePath !== ROOT && !filePath.startsWith(ROOT + path.sep)) {
       res.status(403).json({ error: 'Access denied' });
       return;
     }
@@ -305,12 +309,12 @@ const upload = multer({
       const relPath = toRelativePath(rawPath);
       let dirPath: string;
       try {
-        dirPath = fs.realpathSync(path.resolve(paths.bridgeHome, relPath));
+        dirPath = fs.realpathSync(path.resolve(ROOT, relPath));
       } catch {
         cb(new Error('Target directory does not exist'), '');
         return;
       }
-      if (!dirPath.startsWith(paths.bridgeHome)) {
+      if (dirPath !== ROOT && !dirPath.startsWith(ROOT + path.sep)) {
         cb(new Error('Access denied: path outside bridge home'), '');
         return;
       }
