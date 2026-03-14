@@ -13,7 +13,7 @@ import {
   getAgentCalls,
   getStats,
 } from '../db.js';
-import { listDirectory, readTextFile, isTextFile, isPathSafe } from '../files.js';
+import { listDirectory, readTextFile, isTextFile, isPathSafe, safePath } from '../files.js';
 import { paths } from '../paths.js';
 import path from 'path';
 import fs from 'fs';
@@ -220,15 +220,16 @@ router.get('/files', (req, res) => {
   try {
     const requestedPath = (req.query.path as string) || paths.bridgeHome;
     const showHidden = req.query.hidden === '1' || req.query.hidden === 'true';
-    if (!isPathSafe(requestedPath, paths.bridgeHome)) {
+    const resolvedPath = safePath(requestedPath, paths.bridgeHome);
+    if (!resolvedPath) {
       res.status(403).json({ error: 'Access denied: path outside bridge home' });
       return;
     }
-    const stat = fs.statSync(requestedPath);
+    const stat = fs.statSync(resolvedPath);
     if (stat.isDirectory()) {
-      res.json({ type: 'directory', entries: listDirectory(requestedPath, showHidden) });
-    } else if (isTextFile(requestedPath)) {
-      const { content, truncated } = readTextFile(requestedPath);
+      res.json({ type: 'directory', entries: listDirectory(resolvedPath, showHidden) });
+    } else if (isTextFile(resolvedPath)) {
+      const { content, truncated } = readTextFile(resolvedPath);
       res.json({ type: 'file', content, truncated, mimeType: 'text/plain' });
     } else {
       res.json({ type: 'file', binary: true, size: stat.size });
@@ -245,11 +246,12 @@ router.get('/files', (req, res) => {
 router.get('/files/download', (req, res) => {
   try {
     const requestedPath = req.query.path as string;
-    if (!requestedPath || !isPathSafe(requestedPath, paths.bridgeHome)) {
+    const resolvedPath = safePath(requestedPath || '', paths.bridgeHome);
+    if (!resolvedPath) {
       res.status(403).json({ error: 'Access denied' });
       return;
     }
-    res.download(requestedPath);
+    res.download(resolvedPath);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -260,12 +262,13 @@ const upload = multer({
   storage: multer.diskStorage({
     destination: (req, _file, cb) => {
       const targetDir = (req.query.path as string) || paths.bridgeHome;
-      if (!isPathSafe(targetDir, paths.bridgeHome)) {
+      const resolvedDir = safePath(targetDir, paths.bridgeHome);
+      if (!resolvedDir) {
         cb(new Error('Access denied: path outside bridge home'), '');
         return;
       }
       try {
-        const stat = fs.statSync(targetDir);
+        const stat = fs.statSync(resolvedDir);
         if (!stat.isDirectory()) {
           cb(new Error('Target is not a directory'), '');
           return;
@@ -274,7 +277,7 @@ const upload = multer({
         cb(new Error('Target directory does not exist'), '');
         return;
       }
-      cb(null, targetDir);
+      cb(null, resolvedDir);
     },
     filename: (_req, file, cb) => {
       // Strip directory components to prevent path traversal

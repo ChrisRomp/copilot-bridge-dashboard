@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isPathSafe } from './files.js';
+import { isPathSafe, safePath } from './files.js';
 
 describe('isPathSafe', () => {
   const root = '/Users/chris/.copilot-bridge';
@@ -56,5 +56,40 @@ describe('isPathSafe', () => {
 
   it('rejects relative path without root prefix', () => {
     expect(isPathSafe('etc/passwd', root)).toBe(false);
+  });
+});
+
+describe('safePath', () => {
+  const root = '/Users/chris/.copilot-bridge';
+
+  it('returns resolved path for valid paths', () => {
+    const result = safePath('/Users/chris/.copilot-bridge/config.json', root);
+    expect(result).toBeTruthy();
+    expect(result).toContain('.copilot-bridge');
+  });
+
+  it('returns resolved path for root itself', () => {
+    const result = safePath('/Users/chris/.copilot-bridge', root);
+    expect(result).toBeTruthy();
+  });
+
+  it('returns null for paths outside root', () => {
+    expect(safePath('/tmp/evil', root)).toBeNull();
+  });
+
+  it('returns null for traversal attacks', () => {
+    expect(safePath('/Users/chris/.copilot-bridge/../../etc/passwd', root)).toBeNull();
+  });
+
+  it('returns null for empty path', () => {
+    expect(safePath('', root)).toBeNull();
+  });
+
+  it('returns null for relative path', () => {
+    expect(safePath('etc/passwd', root)).toBeNull();
+  });
+
+  it('returns null for prefix-spoofing path', () => {
+    expect(safePath('/Users/chris/.copilot-bridge-evil/secrets', root)).toBeNull();
   });
 });
