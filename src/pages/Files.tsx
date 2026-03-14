@@ -102,25 +102,11 @@ export function Files() {
   }
 
   async function viewFile(filePath: string) {
-    // Push file view into URL so back button closes it
+    // Push file view into URL — the useEffect on viewingFile handles fetching
     const params: Record<string, string> = {};
     if (currentPath) params.path = currentPath;
     params.file = filePath;
     setSearchParams(params);
-
-    setLoadingFile(true);
-    try {
-      const data = await getFiles(filePath);
-      if (data.type === 'file' && !data.binary) {
-        setFileContent(data.content);
-      } else {
-        setFileContent('Binary file \u2014 use download link');
-      }
-    } catch {
-      setFileContent('Error loading file content');
-    } finally {
-      setLoadingFile(false);
-    }
   }
 
   function closeFile() {

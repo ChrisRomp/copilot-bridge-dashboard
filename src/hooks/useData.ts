@@ -32,30 +32,46 @@ export function useWebSocket(onMessage: (msg: WsMessage) => void) {
   callbackRef.current = onMessage;
 
   useEffect(() => {
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const ws = new WebSocket(`${protocol}//${window.location.host}/ws`);
-    wsRef.current = ws;
+    let unmounted = false;
+    let retryDelay = 1000;
+    const maxDelay = 30000;
 
-    ws.onmessage = (event) => {
-      try {
-        const msg = JSON.parse(event.data);
-        callbackRef.current(msg);
-      } catch {
-        // Ignore malformed messages
-      }
-    };
+    function connect() {
+      if (unmounted) return;
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const ws = new WebSocket(`${protocol}//${window.location.host}/ws`);
+      wsRef.current = ws;
 
-    ws.onclose = () => {
-      // Reconnect after 3 seconds
-      setTimeout(() => {
-        if (wsRef.current === ws) {
-          wsRef.current = null;
+      ws.onopen = () => {
+        retryDelay = 1000;
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const msg = JSON.parse(event.data);
+          callbackRef.current(msg);
+        } catch {
+          // Ignore malformed messages
         }
-      }, 3000);
-    };
+      };
+
+      ws.onclose = () => {
+        if (unmounted) return;
+        wsRef.current = null;
+        setTimeout(connect, retryDelay);
+        retryDelay = Math.min(retryDelay * 2, maxDelay);
+      };
+
+      ws.onerror = () => {
+        ws.close();
+      };
+    }
+
+    connect();
 
     return () => {
-      ws.close();
+      unmounted = true;
+      wsRef.current?.close();
     };
   }, []);
 

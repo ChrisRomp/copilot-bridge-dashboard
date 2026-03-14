@@ -70,7 +70,7 @@ router.get('/agents', (_req, res) => {
           workspace: workspaceDir,
           workspaceExists: fs.existsSync(workspaceDir),
           hasAgentsFile,
-          allowPaths: override ? JSON.parse(override.allow_paths) : [],
+          allowPaths: override?.allow_paths ? JSON.parse(override.allow_paths) : [],
         });
       }
     }
@@ -200,8 +200,15 @@ router.get('/logs/tail', (req, res) => {
       res.json({ lines: [] });
       return;
     }
-    const content = fs.readFileSync(paths.logFile, 'utf-8');
-    const allLines = content.split('\n').filter((l) => l.trim());
+    // Read from end of file to avoid loading entire log into memory
+    const fd = fs.openSync(paths.logFile, 'r');
+    const stat = fs.fstatSync(fd);
+    const chunkSize = Math.min(stat.size, count * 512); // ~512 bytes per line estimate
+    const buffer = Buffer.alloc(chunkSize);
+    fs.readSync(fd, buffer, 0, chunkSize, Math.max(0, stat.size - chunkSize));
+    fs.closeSync(fd);
+    const tail = buffer.toString('utf-8');
+    const allLines = tail.split('\n').filter((l) => l.trim());
     res.json({ lines: allLines.slice(-count) });
   } catch (err: any) {
     res.status(500).json({ error: err.message });

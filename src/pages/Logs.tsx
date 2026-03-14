@@ -7,7 +7,6 @@ export function Logs() {
   const [lines, setLines] = useState<string[]>([]);
   const [filter, setFilter] = useState('');
   const [paused, setPaused] = useState(false);
-  const [connected, setConnected] = useState(false);
   const [initialLoaded, setInitialLoaded] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const pausedRef = useRef(paused);
@@ -30,7 +29,6 @@ export function Logs() {
 
   useWebSocket(
     useCallback((msg: WsMessage) => {
-      setConnected(true);
       if (msg.type === 'log.lines') {
         const raw = msg.data?.lines ?? msg.data;
         const incoming: string[] = typeof raw === 'string'
