@@ -106,7 +106,7 @@ export function readTextFile(filePath: string, maxBytes = 1024 * 1024): { conten
  * so the sanitized value is traceable through the code.
  */
 export function safePath(requestedPath: string, allowedRoot: string): string | null {
-  if (!requestedPath || !requestedPath.startsWith('/')) return null;
+  if (!requestedPath || !path.isAbsolute(requestedPath)) return null;
   // Resolve symlinks to prevent escape via symlinked directories
   let resolved: string;
   try {

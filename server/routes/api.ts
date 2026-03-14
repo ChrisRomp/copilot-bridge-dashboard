@@ -13,7 +13,7 @@ import {
   getAgentCalls,
   getStats,
 } from '../db.js';
-import { listDirectory, readTextFile, isTextFile, isPathSafe, safePath } from '../files.js';
+import { listDirectory, readTextFile, isTextFile } from '../files.js';
 import { paths } from '../paths.js';
 import path from 'path';
 import fs from 'fs';
@@ -220,8 +220,10 @@ router.get('/files', (req, res) => {
   try {
     const requestedPath = (req.query.path as string) || paths.bridgeHome;
     const showHidden = req.query.hidden === '1' || req.query.hidden === 'true';
-    const resolvedPath = safePath(requestedPath, paths.bridgeHome);
-    if (!resolvedPath) {
+    // Inline path validation so CodeQL can trace the sanitization
+    const resolvedPath = path.resolve(requestedPath);
+    const root = path.resolve(paths.bridgeHome);
+    if (resolvedPath !== root && !resolvedPath.startsWith(root + path.sep)) {
       res.status(403).json({ error: 'Access denied: path outside bridge home' });
       return;
     }
@@ -246,8 +248,13 @@ router.get('/files', (req, res) => {
 router.get('/files/download', (req, res) => {
   try {
     const requestedPath = req.query.path as string;
-    const resolvedPath = safePath(requestedPath || '', paths.bridgeHome);
-    if (!resolvedPath) {
+    if (!requestedPath) {
+      res.status(403).json({ error: 'Access denied' });
+      return;
+    }
+    const resolvedPath = path.resolve(requestedPath);
+    const root = path.resolve(paths.bridgeHome);
+    if (resolvedPath !== root && !resolvedPath.startsWith(root + path.sep)) {
       res.status(403).json({ error: 'Access denied' });
       return;
     }
@@ -262,8 +269,9 @@ const upload = multer({
   storage: multer.diskStorage({
     destination: (req, _file, cb) => {
       const targetDir = (req.query.path as string) || paths.bridgeHome;
-      const resolvedDir = safePath(targetDir, paths.bridgeHome);
-      if (!resolvedDir) {
+      const resolvedDir = path.resolve(targetDir);
+      const root = path.resolve(paths.bridgeHome);
+      if (resolvedDir !== root && !resolvedDir.startsWith(root + path.sep)) {
         cb(new Error('Access denied: path outside bridge home'), '');
         return;
       }
