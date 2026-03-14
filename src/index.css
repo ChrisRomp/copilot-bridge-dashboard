@@ -307,12 +307,6 @@ a:hover {
     font-size: 24px;
   }
 
-  /* Tables: horizontal scroll wrapper */
-  .card:has(.data-table) {
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-  }
-
   .data-table th,
   .data-table td {
     padding: 10px 12px;
@@ -328,8 +322,15 @@ a:hover {
   }
 
   /* File browser */
+  .file-entry {
+    flex-wrap: wrap;
+  }
+
   .file-meta {
-    display: none;
+    width: 100%;
+    padding-left: 34px;
+    font-size: 12px;
+    margin-top: -4px;
   }
 
   .breadcrumb {
