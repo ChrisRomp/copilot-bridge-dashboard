@@ -31,10 +31,12 @@ const TEXT_EXTENSIONS = new Set([
 ]);
 
 export function listDirectory(dirPath: string, showHidden = false): FileEntry[] {
+  if (dirPath.includes('..')) throw new Error('Path traversal not allowed');
   const entries = fs.readdirSync(dirPath, { withFileTypes: true });
   return entries
     .filter((e) => showHidden || !e.name.startsWith('.'))
     .map((entry) => {
+      // entry.name comes from the filesystem, not user input
       const fullPath = path.join(dirPath, entry.name);
       const stat = fs.statSync(fullPath);
       const ext = path.extname(entry.name).toLowerCase();
@@ -54,6 +56,7 @@ export function listDirectory(dirPath: string, showHidden = false): FileEntry[] 
 }
 
 export function isTextFile(filePath: string): boolean {
+  if (filePath.includes('..')) return false;
   const ext = path.extname(filePath).toLowerCase();
   if (BINARY_EXTENSIONS.has(ext)) return false;
 
@@ -90,6 +93,7 @@ export function isTextFile(filePath: string): boolean {
 }
 
 export function readTextFile(filePath: string, maxBytes = 1024 * 1024): { content: string; truncated: boolean } {
+  if (filePath.includes('..')) throw new Error('Path traversal not allowed');
   const stat = fs.statSync(filePath);
   const truncated = stat.size > maxBytes;
   const fd = fs.openSync(filePath, 'r');

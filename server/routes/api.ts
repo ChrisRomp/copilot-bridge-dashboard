@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import rateLimit from 'express-rate-limit';
 import multer from 'multer';
 import { loadConfig, sanitizeConfig } from '../config.js';
 import {
@@ -19,6 +20,15 @@ import path from 'path';
 import fs from 'fs';
 
 const router = Router();
+
+// Rate limiting applied at router level (defense in depth — also applied in index.ts)
+const routerLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+router.use(routerLimiter);
 
 // --- Config ---
 router.get('/config', (_req, res) => {
@@ -215,15 +225,32 @@ router.get('/logs/tail', (req, res) => {
   }
 });
 
+/**
+ * Takes a user-provided path (absolute or relative) and returns a safe
+ * absolute path within the bridge home directory, or null if unsafe.
+ * Absolute paths starting with bridgeHome are converted to relative first.
+ * Rejects any path containing '..' to prevent traversal.
+ */
+function resolveToSafePath(raw: string, bridgeHome: string): string | null {
+  if (!raw) return bridgeHome;
+  // Convert absolute paths to relative (backward compat with clients sending absolute)
+  let relPath = raw.startsWith(bridgeHome) ? raw.slice(bridgeHome.length) : raw;
+  // Reject directory traversal
+  if (relPath.includes('..')) return null;
+  // Reject absolute paths that weren't under bridgeHome
+  if (path.isAbsolute(relPath)) return null;
+  // Strip leading slashes and build from constant root
+  relPath = relPath.replace(/^\/+/, '');
+  return relPath ? path.join(bridgeHome, relPath) : bridgeHome;
+}
+
 // --- File browser ---
 router.get('/files', (req, res) => {
   try {
-    const requestedPath = (req.query.path as string) || paths.bridgeHome;
+    const rawPath = (req.query.path as string) || '';
     const showHidden = req.query.hidden === '1' || req.query.hidden === 'true';
-    // Inline path validation so CodeQL can trace the sanitization
-    const resolvedPath = path.resolve(requestedPath);
-    const root = path.resolve(paths.bridgeHome);
-    if (resolvedPath !== root && !resolvedPath.startsWith(root + path.sep)) {
+    const resolvedPath = resolveToSafePath(rawPath, paths.bridgeHome);
+    if (!resolvedPath) {
       res.status(403).json({ error: 'Access denied: path outside bridge home' });
       return;
     }
@@ -247,14 +274,9 @@ router.get('/files', (req, res) => {
 
 router.get('/files/download', (req, res) => {
   try {
-    const requestedPath = req.query.path as string;
-    if (!requestedPath) {
-      res.status(403).json({ error: 'Access denied' });
-      return;
-    }
-    const resolvedPath = path.resolve(requestedPath);
-    const root = path.resolve(paths.bridgeHome);
-    if (resolvedPath !== root && !resolvedPath.startsWith(root + path.sep)) {
+    const rawPath = (req.query.path as string) || '';
+    const resolvedPath = resolveToSafePath(rawPath, paths.bridgeHome);
+    if (!resolvedPath) {
       res.status(403).json({ error: 'Access denied' });
       return;
     }
@@ -268,10 +290,9 @@ router.get('/files/download', (req, res) => {
 const upload = multer({
   storage: multer.diskStorage({
     destination: (req, _file, cb) => {
-      const targetDir = (req.query.path as string) || paths.bridgeHome;
-      const resolvedDir = path.resolve(targetDir);
-      const root = path.resolve(paths.bridgeHome);
-      if (resolvedDir !== root && !resolvedDir.startsWith(root + path.sep)) {
+      const rawPath = (req.query.path as string) || '';
+      const resolvedDir = resolveToSafePath(rawPath, paths.bridgeHome);
+      if (!resolvedDir) {
         cb(new Error('Access denied: path outside bridge home'), '');
         return;
       }

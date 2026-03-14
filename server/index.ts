@@ -35,19 +35,26 @@ app.use(cors({
 app.use(cookieParser());
 app.use(express.json());
 
-// Rate limiting
+// Rate limiting — global limiter covers all routes, stricter limiters on specific endpoints
+const globalLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 300, // 300 requests per minute per IP (static assets + API)
+  standardHeaders: true,
+  legacyHeaders: false,
+});
 const apiLimiter = rateLimit({
-  windowMs: 60 * 1000, // 1 minute
-  max: 120, // 120 requests per minute per IP
+  windowMs: 60 * 1000,
+  max: 120, // 120 API requests per minute per IP
   standardHeaders: true,
   legacyHeaders: false,
 });
 const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
+  windowMs: 15 * 60 * 1000,
   max: 15, // 15 login attempts per 15 min
   standardHeaders: true,
   legacyHeaders: false,
 });
+app.use(globalLimiter);
 app.use('/api', apiLimiter);
 
 // Auth middleware (checks config for dashboard.apiKey; no-op if not set)
