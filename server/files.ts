@@ -99,8 +99,17 @@ export function readTextFile(filePath: string, maxBytes = 1024 * 1024): { conten
   return { content: buffer.toString('utf-8'), truncated };
 }
 
-export function isPathSafe(requestedPath: string, allowedRoot: string): boolean {
-  if (!requestedPath || !requestedPath.startsWith('/')) return false;
+/**
+ * Validates a path is within the allowed root.
+ * Returns the resolved (real) path if safe, or null if unsafe.
+ * Callers MUST use the returned path for all filesystem operations
+ * so the sanitized value is traceable through the code.
+ */
+export function safePath(requestedPath: string, allowedRoot: string): string | null {
+  if (!requestedPath || !path.isAbsolute(requestedPath)) return null;
+  // Check for '..' path segments (segment-based to avoid false positives on filenames like my..notes.txt)
+  const segments = path.normalize(requestedPath).split(path.sep);
+  if (segments.includes('..')) return null;
   // Resolve symlinks to prevent escape via symlinked directories
   let resolved: string;
   try {
@@ -109,6 +118,18 @@ export function isPathSafe(requestedPath: string, allowedRoot: string): boolean 
     // Path doesn't exist yet (e.g., upload target) — fall back to lexical resolve
     resolved = path.resolve(requestedPath);
   }
-  const root = fs.realpathSync(allowedRoot);
-  return resolved === root || resolved.startsWith(root + path.sep);
+  let root: string;
+  try {
+    root = fs.realpathSync(allowedRoot);
+  } catch {
+    // Root doesn't exist — fall back to lexical resolve
+    root = path.resolve(allowedRoot);
+  }
+  if (resolved === root || resolved.startsWith(root + path.sep)) return resolved;
+  return null;
+}
+
+/** @deprecated Use safePath() which returns the resolved path. */
+export function isPathSafe(requestedPath: string, allowedRoot: string): boolean {
+  return safePath(requestedPath, allowedRoot) !== null;
 }
