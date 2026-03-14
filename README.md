@@ -71,7 +71,7 @@ the-bridge/
 │   ├── db.ts         # Read-only SQLite connector
 │   ├── files.ts      # File browser with path safety checks
 │   └── paths.ts      # Centralized path configuration
-├── src/              # React 18 frontend
+├── src/              # React 19 frontend
 │   ├── pages/        # 8 page components
 │   ├── components/   # Shared UI (CodeViewer, Layout, Common)
 │   ├── hooks/        # useFetch, useWebSocket (auto-reconnect)
@@ -104,7 +104,7 @@ the-bridge/
 ## Tech Stack
 
 - **Server**: Express 5, better-sqlite3, ws, chokidar, multer
-- **Client**: React 18, TypeScript, Vite 6, react-router-dom
+- **Client**: React 19, TypeScript, Vite 6, react-router-dom
 - **Syntax**: highlight.js (20+ languages)
 - **Markdown**: react-markdown + remark-gfm
 - **Theme**: Dark mode only
