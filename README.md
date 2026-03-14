@@ -69,7 +69,7 @@ the-bridge/
 │   ├── auth.ts       # Optional API key auth
 │   ├── config.ts     # Bridge config reader (tokens sanitized)
 │   ├── db.ts         # Read-only SQLite connector
-│   ├── files.ts      # File browser with path safety checks
+│   ├── files.ts      # Filesystem helpers (list, read, text detection, safePath)
 │   └── paths.ts      # Centralized path configuration
 ├── src/              # React 19 frontend
 │   ├── pages/        # 8 page components
@@ -83,7 +83,7 @@ the-bridge/
 
 ### Security
 
-- **Path traversal protection** — file API uses `fs.realpathSync(path.resolve(ROOT, input))` + `startsWith(ROOT)` to prevent directory escape (including symlink resolution)
+- **Path traversal protection** — file routes resolve user input relative to bridge home (`path.resolve(ROOT, relPath)`), resolve symlinks (`fs.realpathSync`), and verify the result starts with `ROOT + path.sep` (boundary-aware check prevents prefix collisions)
 - **Rate limiting** — global (300 req/min), API (120 req/min), login (15 req/15min)
 - **CORS** — restricted to localhost origins
 - **WebSocket auth** — validates session cookies on connection

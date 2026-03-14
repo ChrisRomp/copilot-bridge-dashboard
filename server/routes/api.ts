@@ -252,7 +252,7 @@ router.get('/files', (req, res) => {
     // CodeQL-recommended pattern: resolve relative to root, realpath, then startsWith check
     const relPath = toRelativePath(rawPath);
     const filePath = fs.realpathSync(path.resolve(paths.bridgeHome, relPath));
-    if (!filePath.startsWith(paths.bridgeHome)) {
+    if (filePath !== paths.bridgeHome && !filePath.startsWith(paths.bridgeHome + path.sep)) {
       res.status(403).json({ error: 'Access denied: path outside bridge home' });
       return;
     }
@@ -283,7 +283,7 @@ router.get('/files/download', (req, res) => {
     }
     const relPath = toRelativePath(rawPath);
     const filePath = fs.realpathSync(path.resolve(paths.bridgeHome, relPath));
-    if (!filePath.startsWith(paths.bridgeHome)) {
+    if (filePath !== paths.bridgeHome && !filePath.startsWith(paths.bridgeHome + path.sep)) {
       res.status(403).json({ error: 'Access denied' });
       return;
     }
@@ -310,7 +310,7 @@ const upload = multer({
         cb(new Error('Target directory does not exist'), '');
         return;
       }
-      if (!dirPath.startsWith(paths.bridgeHome)) {
+      if (dirPath !== paths.bridgeHome && !dirPath.startsWith(paths.bridgeHome + path.sep)) {
         cb(new Error('Access denied: path outside bridge home'), '');
         return;
       }
