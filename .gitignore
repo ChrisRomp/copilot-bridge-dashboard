@@ -28,4 +28,3 @@ coverage/
 
 # Playwright
 .playwright-cli/
-*.png
