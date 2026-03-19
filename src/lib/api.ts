@@ -67,9 +67,11 @@ export const getFileDownloadUrl = (path: string) =>
 export const getFilePreviewUrl = (path: string) =>
   `${API_BASE}/files/download?path=${encodeURIComponent(path)}&inline=1`;
 
-const imageExtensions = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg']);
+const imageExtensions = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp']);
 export const isImageFile = (filePath: string) => {
-  const ext = filePath.slice(filePath.lastIndexOf('.')).toLowerCase();
+  const dotIdx = filePath.lastIndexOf('.');
+  if (dotIdx === -1) return false;
+  const ext = filePath.slice(dotIdx).toLowerCase();
   return imageExtensions.has(ext);
 };
 

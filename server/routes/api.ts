@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
+import contentDisposition from 'content-disposition';
 import multer from 'multer';
 import { loadConfig, sanitizeConfig } from '../config.js';
 import {
@@ -303,20 +304,20 @@ router.get('/files/download', (req, res) => {
       '.pdf': 'application/pdf', '.zip': 'application/zip',
     };
     const contentType = mimeTypes[ext] ?? 'application/octet-stream';
-    // Inline display for images, attachment for everything else
-    const isImage = contentType.startsWith('image/');
-    const basename = path.basename(filePath).replace(/"/g, '\\"');
-    const disposition = isImage && req.query.inline === '1'
-      ? 'inline'
-      : `attachment; filename="${basename}"`;
+    // Allow inline display for images except SVG (SVG can execute scripts)
+    const isSafeImage = contentType.startsWith('image/') && ext !== '.svg';
+    const inline = isSafeImage && req.query.inline === '1';
+    const basename = path.basename(filePath);
     res.setHeader('Content-Type', contentType);
     res.setHeader('Content-Length', stat.size);
-    res.setHeader('Content-Disposition', disposition);
+    res.setHeader('Content-Disposition', contentDisposition(basename, { type: inline ? 'inline' : 'attachment' }));
+    res.setHeader('X-Content-Type-Options', 'nosniff');
     const stream = fs.createReadStream(filePath);
     stream.on('error', (err) => {
       if (!res.headersSent) res.status(500).json({ error: err.message });
       else res.destroy();
     });
+    res.on('close', () => stream.destroy());
     stream.pipe(res);
   } catch (err: any) {
     if (err.code === 'ENOENT') {
