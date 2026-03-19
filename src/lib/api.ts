@@ -69,8 +69,9 @@ export const getFilePreviewUrl = (path: string) =>
 
 const imageExtensions = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg']);
 export const isImageFile = (filePath: string) => {
-  const ext = filePath.slice(filePath.lastIndexOf('.')).toLowerCase();
-  return imageExtensions.has(ext);
+  const dotIdx = filePath.lastIndexOf('.');
+  if (dotIdx === -1) return false;
+  return imageExtensions.has(filePath.slice(dotIdx).toLowerCase());
 };
 
 // File upload

@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
 import multer from 'multer';
+import contentDisposition from 'content-disposition';
 import { loadConfig, sanitizeConfig } from '../config.js';
 import {
   getDb,
@@ -317,10 +318,9 @@ router.get('/files/download', (req, res) => {
     const contentType = mimeTypes[ext] ?? 'application/octet-stream';
     // Inline display for images, attachment for everything else
     const isImage = contentType.startsWith('image/');
-    const basename = path.basename(resolvedFile).replace(/"/g, '\\"');
     const disposition = isImage && req.query.inline === '1'
-      ? 'inline'
-      : `attachment; filename="${basename}"`;
+      ? contentDisposition(path.basename(resolvedFile), { type: 'inline' })
+      : contentDisposition(path.basename(resolvedFile));
     res.setHeader('Content-Type', contentType);
     res.setHeader('Content-Length', stat.size);
     res.setHeader('Content-Disposition', disposition);

@@ -60,6 +60,12 @@ export function Files() {
       setLoadingFile(false);
       return;
     }
+    // Image files render via <img> tag — no need to fetch content
+    if (isImageFile(viewingFile)) {
+      setFileContent(null);
+      setLoadingFile(false);
+      return;
+    }
     let cancelled = false;
     setLoadingFile(true);
     setFileContent(null);
