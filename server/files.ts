@@ -1,6 +1,8 @@
 import fs from 'fs';
 import path from 'path';
 import mime from 'mime-types';
+import type { Response } from 'express';
+import { fileURLToPath, pathToFileURL } from 'url';
 
 export interface FileEntry {
   name: string;
@@ -30,13 +32,14 @@ const TEXT_EXTENSIONS = new Set([
   '.makefile', '.dockerfile',
 ]);
 
-export function listDirectory(dirPath: string, showHidden = false): FileEntry[] {
-  const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+export function listDirectory(dirUrl: URL, showHidden = false): FileEntry[] {
+  const dirPath = fileURLToPath(dirUrl);
+  const entries = fs.readdirSync(dirUrl, { withFileTypes: true });
   return entries
     .filter((e) => showHidden || !e.name.startsWith('.'))
     .map((entry) => {
       const fullPath = path.join(dirPath, entry.name);
-      const stat = fs.statSync(fullPath);
+      const stat = fs.statSync(pathToFileURL(fullPath));
       const ext = path.extname(entry.name).toLowerCase();
       return {
         name: entry.name,
@@ -53,7 +56,8 @@ export function listDirectory(dirPath: string, showHidden = false): FileEntry[] 
     });
 }
 
-export function isTextFile(filePath: string): boolean {
+export function isTextFile(fileUrl: URL): boolean {
+  const filePath = fileURLToPath(fileUrl);
   const ext = path.extname(filePath).toLowerCase();
   if (BINARY_EXTENSIONS.has(ext)) return false;
 
@@ -76,7 +80,7 @@ export function isTextFile(filePath: string): boolean {
 
   // Unknown extension — probe first bytes for binary content (null bytes)
   try {
-    const fd = fs.openSync(filePath, 'r');
+    const fd = fs.openSync(fileUrl, 'r');
     const buf = Buffer.alloc(512);
     const bytesRead = fs.readSync(fd, buf, 0, 512, 0);
     fs.closeSync(fd);
@@ -89,14 +93,31 @@ export function isTextFile(filePath: string): boolean {
   }
 }
 
-export function readTextFile(filePath: string, maxBytes = 1024 * 1024): { content: string; truncated: boolean } {
-  const stat = fs.statSync(filePath);
+export function readTextFile(fileUrl: URL, maxBytes = 1024 * 1024): { content: string; truncated: boolean } {
+  const stat = fs.statSync(fileUrl);
   const truncated = stat.size > maxBytes;
-  const fd = fs.openSync(filePath, 'r');
+  const fd = fs.openSync(fileUrl, 'r');
   const buffer = Buffer.alloc(Math.min(stat.size, maxBytes));
   fs.readSync(fd, buffer, 0, buffer.length, 0);
   fs.closeSync(fd);
   return { content: buffer.toString('utf-8'), truncated };
+}
+
+export function getFileStat(fileUrl: URL): fs.Stats {
+  return fs.statSync(fileUrl);
+}
+
+export function downloadResolvedFile(res: Response, fileUrl: URL, fileName: string): void {
+  const stat = fs.statSync(fileUrl);
+  if (!stat.isFile()) {
+    const error = new Error('Not found');
+    (error as NodeJS.ErrnoException).code = 'ENOENT';
+    throw error;
+  }
+
+  res.attachment(fileName);
+  res.setHeader('Content-Length', stat.size);
+  fs.createReadStream(fileUrl).pipe(res);
 }
 
 /**
