@@ -15,11 +15,12 @@ import {
   getAgentCalls,
   getStats,
 } from '../db.js';
-import { listDirectory, readTextFile, isTextFile, safePath } from '../files.js';
+import { listDirectory, readTextFile, isTextFile, getFileStat, safePath } from '../files.js';
 import { paths } from '../paths.js';
 import mime from 'mime-types';
 import path from 'path';
 import fs from 'fs';
+import { pathToFileURL } from 'url';
 
 const router = Router();
 
@@ -237,17 +238,16 @@ function queryString(param: unknown): string {
   return typeof param === 'string' ? param : '';
 }
 
-/**
- * Convert user-provided path to a safe relative path under bridge home.
- * Strips bridgeHome prefix if present, removes leading slashes.
- */
-function toRelativePath(raw: string): string {
-  let rel = raw;
-  if (rel.startsWith(ROOT)) {
-    rel = rel.slice(ROOT.length);
+function resolveExistingPath(raw: string): string | null {
+  if (!raw) {
+    return ROOT;
   }
-  // Remove leading slashes so path.resolve treats it as relative to root
-  return rel.replace(/^[/\\]+/, '') || '.';
+
+  const candidatePath = path.isAbsolute(raw)
+    ? raw
+    : path.resolve(ROOT, raw);
+
+  return safePath(candidatePath, ROOT);
 }
 
 // --- File browser ---
@@ -255,18 +255,17 @@ router.get('/files', (req, res) => {
   try {
     const rawPath = queryString(req.query.path);
     const showHidden = req.query.hidden === '1' || req.query.hidden === 'true';
-    // Validate path via safePath() — lexical boundary check then realpath resolution
-    const relPath = toRelativePath(rawPath);
-    const filePath = safePath(path.resolve(ROOT, relPath), ROOT);
+    const filePath = resolveExistingPath(rawPath);
     if (!filePath) {
       res.status(403).json({ error: 'Access denied: path outside bridge home' });
       return;
     }
-    const stat = fs.statSync(filePath);
+    const fileUrl = pathToFileURL(filePath);
+    const stat = getFileStat(fileUrl);
     if (stat.isDirectory()) {
-      res.json({ type: 'directory', entries: listDirectory(filePath, showHidden) });
-    } else if (isTextFile(filePath)) {
-      const { content, truncated } = readTextFile(filePath);
+      res.json({ type: 'directory', entries: listDirectory(fileUrl, showHidden) });
+    } else if (isTextFile(fileUrl)) {
+      const { content, truncated } = readTextFile(fileUrl);
       res.json({ type: 'file', content, truncated, mimeType: 'text/plain' });
     } else {
       res.json({ type: 'file', binary: true, size: stat.size });
@@ -287,8 +286,7 @@ router.get('/files/download', (req, res) => {
       res.status(403).json({ error: 'Access denied' });
       return;
     }
-    const relPath = toRelativePath(rawPath);
-    const filePath = safePath(path.resolve(ROOT, relPath), ROOT);
+    const filePath = resolveExistingPath(rawPath);
     if (!filePath) {
       res.status(403).json({ error: 'Access denied' });
       return;
@@ -334,8 +332,7 @@ const upload = multer({
   storage: multer.diskStorage({
     destination: (req, _file, cb) => {
       const rawPath = queryString(req.query.path);
-      const relPath = toRelativePath(rawPath);
-      const dirPath = safePath(path.resolve(ROOT, relPath), ROOT);
+      const dirPath = resolveExistingPath(rawPath);
       if (!dirPath) {
         cb(new Error('Access denied: path outside bridge home'), '');
         return;
