@@ -107,8 +107,8 @@ export function readTextFile(filePath: string, maxBytes = 1024 * 1024): { conten
  */
 export function safePath(requestedPath: string, allowedRoot: string): string | null {
   if (!requestedPath || !path.isAbsolute(requestedPath)) return null;
-  // Normalize to resolve . segments and collapse separators
-  const normalized = path.normalize(requestedPath);
+  // Resolve to get a clean absolute path (handles . segments, collapses separators)
+  const normalized = path.resolve(requestedPath);
   // Check for '..' path segments (segment-based to avoid false positives on filenames like my..notes.txt)
   const segments = normalized.split(path.sep);
   if (segments.includes('..')) return null;
