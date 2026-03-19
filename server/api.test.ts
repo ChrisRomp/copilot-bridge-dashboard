@@ -17,9 +17,11 @@ async function fetchApi(urlPath: string): Promise<{ status: number; body: any; h
   return { status: res.status, body, headers: res.headers };
 }
 
-async function fetchRaw(urlPath: string): Promise<{ status: number; headers: Headers; text: string }> {
+async function fetchHead(urlPath: string): Promise<{ status: number; headers: Headers }> {
   const res = await fetch(`${BASE}${urlPath}`);
-  return { status: res.status, headers: res.headers, text: await res.text() };
+  // Don't consume the body — we only need headers/status
+  res.body?.cancel();
+  return { status: res.status, headers: res.headers };
 }
 
 let BRIDGE_HOME: string;
@@ -98,24 +100,24 @@ describe('File API', () => {
     });
 
     it('downloads a file with correct headers', async () => {
-      if (!DOWNLOADABLE_FILE) return;
-      const { status, headers } = await fetchRaw(
-        `/api/files/download?path=${encodeURIComponent(DOWNLOADABLE_FILE)}`,
+      expect(DOWNLOADABLE_FILE).toBeTruthy();
+      const { status, headers } = await fetchHead(
+        `/api/files/download?path=${encodeURIComponent(DOWNLOADABLE_FILE!)}`,
       );
       expect(status).toBe(200);
-      expect(headers.get('content-disposition')).toBeTruthy();
+      expect(headers.get('content-disposition')).toMatch(/attachment/);
       expect(headers.get('content-length')).toBeTruthy();
       expect(headers.get('x-content-type-options')).toBe('nosniff');
     });
 
-    it('serves inline with ?inline=1 for images', async () => {
-      if (!DOWNLOADABLE_FILE) return;
-      // Use any file — non-images should still get attachment disposition
-      const { status, headers } = await fetchRaw(
-        `/api/files/download?path=${encodeURIComponent(DOWNLOADABLE_FILE)}&inline=1`,
+    it('serves attachment for non-image with ?inline=1', async () => {
+      expect(DOWNLOADABLE_FILE).toBeTruthy();
+      const { status, headers } = await fetchHead(
+        `/api/files/download?path=${encodeURIComponent(DOWNLOADABLE_FILE!)}&inline=1`,
       );
       expect(status).toBe(200);
-      expect(headers.get('content-disposition')).toBeTruthy();
+      // Non-image files should still get attachment disposition
+      expect(headers.get('content-disposition')).toMatch(/attachment/);
     });
   });
 });

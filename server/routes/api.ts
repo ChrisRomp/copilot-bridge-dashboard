@@ -17,6 +17,7 @@ import {
 } from '../db.js';
 import { listDirectory, readTextFile, isTextFile, safePath } from '../files.js';
 import { paths } from '../paths.js';
+import mime from 'mime-types';
 import path from 'path';
 import fs from 'fs';
 
@@ -297,28 +298,28 @@ router.get('/files/download', (req, res) => {
       res.status(400).json({ error: 'Not a file' });
       return;
     }
-    const ext = path.extname(filePath).toLowerCase();
-    const mimeTypes: Record<string, string> = {
-      '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
-      '.gif': 'image/gif', '.webp': 'image/webp', '.svg': 'image/svg+xml',
-      '.pdf': 'application/pdf', '.zip': 'application/zip',
-    };
-    const contentType = mimeTypes[ext] ?? 'application/octet-stream';
+
+    const basename = path.basename(filePath);
+    const ext = path.extname(basename).toLowerCase();
+    const contentType = (ext === '.svg' ? 'image/svg+xml' : mime.lookup(basename)) || 'application/octet-stream';
     // Allow inline display for images except SVG (SVG can execute scripts)
     const isSafeImage = contentType.startsWith('image/') && ext !== '.svg';
     const inline = isSafeImage && req.query.inline === '1';
-    const basename = path.basename(filePath);
-    res.setHeader('Content-Type', contentType);
-    res.setHeader('Content-Length', stat.size);
-    res.setHeader('Content-Disposition', contentDisposition(basename, { type: inline ? 'inline' : 'attachment' }));
-    res.setHeader('X-Content-Type-Options', 'nosniff');
+
     const stream = fs.createReadStream(filePath);
     stream.on('error', (err) => {
       if (!res.headersSent) res.status(500).json({ error: err.message });
       else res.destroy();
     });
+    // Set headers after stream opens successfully
+    stream.once('open', () => {
+      res.setHeader('Content-Type', contentType);
+      res.setHeader('Content-Length', stat.size);
+      res.setHeader('Content-Disposition', contentDisposition(basename, { type: inline ? 'inline' : 'attachment' }));
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      stream.pipe(res);
+    });
     res.on('close', () => stream.destroy());
-    stream.pipe(res);
   } catch (err: any) {
     if (err.code === 'ENOENT') {
       res.status(404).json({ error: 'Not found' });
