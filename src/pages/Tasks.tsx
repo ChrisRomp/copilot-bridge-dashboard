@@ -48,11 +48,11 @@ export function Tasks() {
                   <td>{task.bot_name ?? '—'}</td>
                   <td>
                     <Badge type="info">
-                      {task.cron ? 'cron' : 'one-off'}
+                      {task.cron_expr ? 'cron' : 'one-off'}
                     </Badge>
                   </td>
                   <td style={{ fontFamily: 'monospace', fontSize: 13 }}>
-                    {task.cron ?? task.run_at ?? '—'}
+                    {task.cron_expr ?? task.run_at ?? '—'}
                   </td>
                   <td>{task.timezone ?? '—'}</td>
                   <td>
