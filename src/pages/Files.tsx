@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useFetch } from '../hooks/useData.js';
-import { getFiles, getFileDownloadUrl, uploadFiles, getBridgeHome } from '../lib/api.js';
+import { getFiles, getFileDownloadUrl, getFilePreviewUrl, isImageFile, uploadFiles, getBridgeHome } from '../lib/api.js';
 import { Loading, ErrorBox, EmptyState, formatBytes, formatDate } from '../components/Common.js';
 import { CodeViewer } from '../components/CodeViewer.js';
 
@@ -309,6 +309,14 @@ export function Files() {
           </div>
           {loadingFile ? (
             <Loading message="Loading\u2026" />
+          ) : viewingFile && isImageFile(viewingFile) ? (
+            <div style={{ textAlign: 'center', padding: 16 }}>
+              <img
+                src={getFilePreviewUrl(viewingFile)}
+                alt={viewingFile.split('/').pop() ?? 'image'}
+                style={{ maxWidth: '100%', maxHeight: '70vh', borderRadius: 8, border: '1px solid var(--border)' }}
+              />
+            </div>
           ) : fileContent ? (
             <CodeViewer content={fileContent} filename={viewingFile.split('/').pop() ?? 'file'} />
           ) : null}
@@ -344,13 +352,13 @@ export function Files() {
                       >
                         <span>{'\u{1F4C1}'}</span> {entry.name}
                       </a>
-                    ) : isTextFile(entry.name) ? (
+                    ) : isTextFile(entry.name) || isImageFile(entry.name) ? (
                       <a
                         href="#"
                         onClick={(e) => { e.preventDefault(); viewFile(entry.path); }}
                         style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}
                       >
-                        <span>{'\u{1F4C4}'}</span> {entry.name}
+                        <span>{isImageFile(entry.name) ? '\u{1F5BC}' : '\u{1F4C4}'}</span> {entry.name}
                       </a>
                     ) : (
                       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>

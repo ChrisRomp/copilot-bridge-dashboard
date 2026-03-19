@@ -291,7 +291,23 @@ router.get('/files/download', (req, res) => {
       res.status(403).json({ error: 'Access denied' });
       return;
     }
-    res.download(filePath);
+    const stat = fs.statSync(filePath);
+    const ext = path.extname(filePath).toLowerCase();
+    const mimeTypes: Record<string, string> = {
+      '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
+      '.gif': 'image/gif', '.webp': 'image/webp', '.svg': 'image/svg+xml',
+      '.pdf': 'application/pdf', '.zip': 'application/zip',
+    };
+    const contentType = mimeTypes[ext] ?? 'application/octet-stream';
+    // Inline display for images, attachment for everything else
+    const isImage = contentType.startsWith('image/');
+    const disposition = isImage && req.query.inline === '1'
+      ? 'inline'
+      : `attachment; filename="${path.basename(filePath)}"`;
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Content-Length', stat.size);
+    res.setHeader('Content-Disposition', disposition);
+    fs.createReadStream(filePath).pipe(res);
   } catch (err: any) {
     if (err.code === 'ENOENT') {
       res.status(404).json({ error: 'Not found' });
