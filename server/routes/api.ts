@@ -260,11 +260,17 @@ router.get('/files', (req, res) => {
       res.status(403).json({ error: 'Access denied: path outside bridge home' });
       return;
     }
-    const stat = fs.statSync(filePath);
+    // Inline realpath+boundary check — CodeQL cannot trace through safePath()
+    const resolvedFile = fs.realpathSync(filePath);
+    if (resolvedFile !== ROOT && !resolvedFile.startsWith(ROOT + path.sep)) {
+      res.status(403).json({ error: 'Access denied: path outside bridge home' });
+      return;
+    }
+    const stat = fs.statSync(resolvedFile);
     if (stat.isDirectory()) {
-      res.json({ type: 'directory', entries: listDirectory(filePath, showHidden) });
-    } else if (isTextFile(filePath)) {
-      const { content, truncated } = readTextFile(filePath);
+      res.json({ type: 'directory', entries: listDirectory(resolvedFile, showHidden) });
+    } else if (isTextFile(resolvedFile)) {
+      const { content, truncated } = readTextFile(resolvedFile);
       res.json({ type: 'file', content, truncated, mimeType: 'text/plain' });
     } else {
       res.json({ type: 'file', binary: true, size: stat.size });
@@ -291,12 +297,18 @@ router.get('/files/download', (req, res) => {
       res.status(403).json({ error: 'Access denied' });
       return;
     }
-    const stat = fs.statSync(filePath);
+    // Inline realpath+boundary check — CodeQL cannot trace through safePath()
+    const resolvedFile = fs.realpathSync(filePath);
+    if (resolvedFile !== ROOT && !resolvedFile.startsWith(ROOT + path.sep)) {
+      res.status(403).json({ error: 'Access denied' });
+      return;
+    }
+    const stat = fs.statSync(resolvedFile);
     if (!stat.isFile()) {
       res.status(400).json({ error: 'Not a file' });
       return;
     }
-    const ext = path.extname(filePath).toLowerCase();
+    const ext = path.extname(resolvedFile).toLowerCase();
     const mimeTypes: Record<string, string> = {
       '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
       '.gif': 'image/gif', '.webp': 'image/webp', '.svg': 'image/svg+xml',
@@ -305,14 +317,14 @@ router.get('/files/download', (req, res) => {
     const contentType = mimeTypes[ext] ?? 'application/octet-stream';
     // Inline display for images, attachment for everything else
     const isImage = contentType.startsWith('image/');
-    const basename = path.basename(filePath).replace(/"/g, '\\"');
+    const basename = path.basename(resolvedFile).replace(/"/g, '\\"');
     const disposition = isImage && req.query.inline === '1'
       ? 'inline'
       : `attachment; filename="${basename}"`;
     res.setHeader('Content-Type', contentType);
     res.setHeader('Content-Length', stat.size);
     res.setHeader('Content-Disposition', disposition);
-    const stream = fs.createReadStream(filePath);
+    const stream = fs.createReadStream(resolvedFile);
     stream.on('error', (err) => {
       if (!res.headersSent) res.status(500).json({ error: err.message });
       else res.destroy();

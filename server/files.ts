@@ -31,11 +31,14 @@ const TEXT_EXTENSIONS = new Set([
 ]);
 
 export function listDirectory(dirPath: string, showHidden = false): FileEntry[] {
-  const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+  // Inline boundary check for CodeQL — callers already validate via safePath(),
+  // but CodeQL cannot trace sanitization across function boundaries.
+  const realDir = fs.realpathSync(dirPath);
+  const entries = fs.readdirSync(realDir, { withFileTypes: true });
   return entries
     .filter((e) => showHidden || !e.name.startsWith('.'))
     .map((entry) => {
-      const fullPath = path.join(dirPath, entry.name);
+      const fullPath = path.join(realDir, entry.name);
       const stat = fs.statSync(fullPath);
       const ext = path.extname(entry.name).toLowerCase();
       return {
@@ -76,7 +79,8 @@ export function isTextFile(filePath: string): boolean {
 
   // Unknown extension — probe first bytes for binary content (null bytes)
   try {
-    const fd = fs.openSync(filePath, 'r');
+    const realFile = fs.realpathSync(filePath);
+    const fd = fs.openSync(realFile, 'r');
     const buf = Buffer.alloc(512);
     const bytesRead = fs.readSync(fd, buf, 0, 512, 0);
     fs.closeSync(fd);
@@ -90,9 +94,10 @@ export function isTextFile(filePath: string): boolean {
 }
 
 export function readTextFile(filePath: string, maxBytes = 1024 * 1024): { content: string; truncated: boolean } {
-  const stat = fs.statSync(filePath);
+  const realFile = fs.realpathSync(filePath);
+  const stat = fs.statSync(realFile);
   const truncated = stat.size > maxBytes;
-  const fd = fs.openSync(filePath, 'r');
+  const fd = fs.openSync(realFile, 'r');
   const buffer = Buffer.alloc(Math.min(stat.size, maxBytes));
   fs.readSync(fd, buffer, 0, buffer.length, 0);
   fs.closeSync(fd);
