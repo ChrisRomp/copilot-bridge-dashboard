@@ -14,7 +14,7 @@ import {
   getAgentCalls,
   getStats,
 } from '../db.js';
-import { listDirectory, readTextFile, isTextFile } from '../files.js';
+import { listDirectory, readTextFile, isTextFile, safePath } from '../files.js';
 import { paths } from '../paths.js';
 import path from 'path';
 import fs from 'fs';
@@ -253,10 +253,10 @@ router.get('/files', (req, res) => {
   try {
     const rawPath = queryString(req.query.path);
     const showHidden = req.query.hidden === '1' || req.query.hidden === 'true';
-    // CodeQL-recommended pattern: resolve relative to root, realpath, then startsWith check
+    // Validate path via safePath() — lexical boundary check then realpath resolution
     const relPath = toRelativePath(rawPath);
-    const filePath = fs.realpathSync(path.resolve(ROOT, relPath));
-    if (filePath !== ROOT && !filePath.startsWith(ROOT + path.sep)) {
+    const filePath = safePath(path.resolve(ROOT, relPath), ROOT);
+    if (!filePath) {
       res.status(403).json({ error: 'Access denied: path outside bridge home' });
       return;
     }
@@ -286,8 +286,8 @@ router.get('/files/download', (req, res) => {
       return;
     }
     const relPath = toRelativePath(rawPath);
-    const filePath = fs.realpathSync(path.resolve(ROOT, relPath));
-    if (filePath !== ROOT && !filePath.startsWith(ROOT + path.sep)) {
+    const filePath = safePath(path.resolve(ROOT, relPath), ROOT);
+    if (!filePath) {
       res.status(403).json({ error: 'Access denied' });
       return;
     }
@@ -307,14 +307,8 @@ const upload = multer({
     destination: (req, _file, cb) => {
       const rawPath = queryString(req.query.path);
       const relPath = toRelativePath(rawPath);
-      let dirPath: string;
-      try {
-        dirPath = fs.realpathSync(path.resolve(ROOT, relPath));
-      } catch {
-        cb(new Error('Target directory does not exist'), '');
-        return;
-      }
-      if (dirPath !== ROOT && !dirPath.startsWith(ROOT + path.sep)) {
+      const dirPath = safePath(path.resolve(ROOT, relPath), ROOT);
+      if (!dirPath) {
         cb(new Error('Access denied: path outside bridge home'), '');
         return;
       }

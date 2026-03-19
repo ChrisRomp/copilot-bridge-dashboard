@@ -107,26 +107,54 @@ export function readTextFile(filePath: string, maxBytes = 1024 * 1024): { conten
  */
 export function safePath(requestedPath: string, allowedRoot: string): string | null {
   if (!requestedPath || !path.isAbsolute(requestedPath)) return null;
-  // Check for '..' path segments (segment-based to avoid false positives on filenames like my..notes.txt)
-  const segments = path.normalize(requestedPath).split(path.sep);
-  if (segments.includes('..')) return null;
-  // Resolve symlinks to prevent escape via symlinked directories
-  let resolved: string;
-  try {
-    resolved = fs.realpathSync(requestedPath);
-  } catch {
-    // Path doesn't exist yet (e.g., upload target) — fall back to lexical resolve
-    resolved = path.resolve(requestedPath);
-  }
+  // Reject '..' segments in the raw input before any resolution can normalize them away
+  const rawSegments = requestedPath.split(/[/\\]/);
+  if (rawSegments.includes('..')) return null;
+  // Resolve to get a clean absolute path (handles . segments, collapses separators)
+  const normalized = path.resolve(requestedPath);
+  // Resolve the allowed root
   let root: string;
   try {
     root = fs.realpathSync(allowedRoot);
   } catch {
-    // Root doesn't exist — fall back to lexical resolve
     root = path.resolve(allowedRoot);
+  }
+  // Lexical boundary check BEFORE any filesystem operation on the requested path.
+  // This prevents path injection by ensuring the path is within root before touching disk.
+  if (normalized !== root && !normalized.startsWith(root + path.sep)) return null;
+  // Resolve symlinks to prevent escape via symlinked directories.
+  // Walk up to the nearest existing ancestor and resolve it, then re-append
+  // the remaining segments. This prevents symlink escape when the full path
+  // doesn't exist yet (e.g., upload target) but a parent is a symlink.
+  let resolved: string;
+  try {
+    resolved = fs.realpathSync(normalized);
+  } catch {
+    resolved = resolveNearestParent(normalized);
   }
   if (resolved === root || resolved.startsWith(root + path.sep)) return resolved;
   return null;
+}
+
+/**
+ * Resolve the nearest existing ancestor of `target` with realpathSync,
+ * then re-append the non-existent tail segments. This catches symlink
+ * escapes in parent directories even when the full path doesn't exist.
+ */
+function resolveNearestParent(target: string): string {
+  let current = target;
+  const tail: string[] = [];
+  while (current !== path.dirname(current)) {
+    try {
+      const real = fs.realpathSync(current);
+      return tail.length ? path.join(real, ...tail) : real;
+    } catch {
+      tail.unshift(path.basename(current));
+      current = path.dirname(current);
+    }
+  }
+  // Reached filesystem root without resolving — fall back to lexical resolve
+  return path.resolve(target);
 }
 
 /** @deprecated Use safePath() which returns the resolved path. */
