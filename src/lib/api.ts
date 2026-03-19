@@ -64,6 +64,15 @@ export const getFiles = (path?: string, showHidden = false) => {
 export const getFileDownloadUrl = (path: string) =>
   `${API_BASE}/files/download?path=${encodeURIComponent(path)}`;
 
+export const getFilePreviewUrl = (path: string) =>
+  `${API_BASE}/files/download?path=${encodeURIComponent(path)}&inline=1`;
+
+const imageExtensions = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg']);
+export const isImageFile = (filePath: string) => {
+  const ext = filePath.slice(filePath.lastIndexOf('.')).toLowerCase();
+  return imageExtensions.has(ext);
+};
+
 // File upload
 export async function uploadFiles(files: File[], targetPath?: string): Promise<{ uploaded: { name: string; size: number; path: string }[] }> {
   const form = new FormData();
