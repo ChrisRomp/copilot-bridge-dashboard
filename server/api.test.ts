@@ -88,3 +88,39 @@ describe('File API access control', () => {
     expect(status).toBe(404);
   });
 });
+
+// --- Download endpoint tests ---
+// These need a known file to exist within bridge home.
+// We use the config file which always exists.
+
+async function fetchRaw(path: string): Promise<Response> {
+  return fetch(`${BASE}${path}`);
+}
+
+describe('File download endpoint', () => {
+  it('downloads a valid file with correct headers', async () => {
+    const res = await fetchRaw('/api/files/download?path=/Users/chris/.copilot-bridge/config.json');
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toBe('application/octet-stream');
+    expect(res.headers.get('content-disposition')).toMatch(/attachment/);
+    expect(res.headers.get('x-content-type-options')).toBe('nosniff');
+    expect(Number(res.headers.get('content-length'))).toBeGreaterThan(0);
+  });
+
+  it('rejects directory download with 400', async () => {
+    const res = await fetchRaw('/api/files/download?path=/Users/chris/.copilot-bridge/workspaces');
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toMatch(/not a file/i);
+  });
+
+  it('rejects download without path param', async () => {
+    const res = await fetchRaw('/api/files/download');
+    expect(res.status).toBe(403);
+  });
+
+  it('returns 404 for non-existent file download', async () => {
+    const res = await fetchRaw('/api/files/download?path=/Users/chris/.copilot-bridge/nonexistent_file.txt');
+    expect(res.status).toBe(404);
+  });
+});

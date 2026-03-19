@@ -261,7 +261,12 @@ router.get('/files', (req, res) => {
       res.status(403).json({ error: 'Access denied: path outside bridge home' });
       return;
     }
-    // Inline realpath+boundary check — CodeQL cannot trace through safePath()
+    // Lexical boundary check before any filesystem operation on the user-influenced path
+    if (filePath !== ROOT && !filePath.startsWith(ROOT + path.sep)) {
+      res.status(403).json({ error: 'Access denied: path outside bridge home' });
+      return;
+    }
+    // Resolve symlinks and re-check boundary
     const resolvedFile = fs.realpathSync(filePath);
     if (resolvedFile !== ROOT && !resolvedFile.startsWith(ROOT + path.sep)) {
       res.status(403).json({ error: 'Access denied: path outside bridge home' });
@@ -269,7 +274,7 @@ router.get('/files', (req, res) => {
     }
     const stat = fs.statSync(resolvedFile);
     if (stat.isDirectory()) {
-      res.json({ type: 'directory', entries: listDirectory(resolvedFile, showHidden) });
+      res.json({ type: 'directory', entries: listDirectory(resolvedFile, showHidden, ROOT) });
     } else if (isTextFile(resolvedFile)) {
       const { content, truncated } = readTextFile(resolvedFile);
       res.json({ type: 'file', content, truncated, mimeType: 'text/plain' });
@@ -298,7 +303,12 @@ router.get('/files/download', (req, res) => {
       res.status(403).json({ error: 'Access denied' });
       return;
     }
-    // Inline realpath+boundary check — CodeQL cannot trace through safePath()
+    // Lexical boundary check before any filesystem operation on the user-influenced path
+    if (filePath !== ROOT && !filePath.startsWith(ROOT + path.sep)) {
+      res.status(403).json({ error: 'Access denied' });
+      return;
+    }
+    // Resolve symlinks and re-check boundary
     const resolvedFile = fs.realpathSync(filePath);
     if (resolvedFile !== ROOT && !resolvedFile.startsWith(ROOT + path.sep)) {
       res.status(403).json({ error: 'Access denied' });
@@ -316,19 +326,22 @@ router.get('/files/download', (req, res) => {
       '.pdf': 'application/pdf', '.zip': 'application/zip',
     };
     const contentType = mimeTypes[ext] ?? 'application/octet-stream';
-    // Inline display for images, attachment for everything else
-    const isImage = contentType.startsWith('image/');
+    // SVG can execute scripts when served inline — force attachment
+    const isSvg = ext === '.svg';
+    const isImage = contentType.startsWith('image/') && !isSvg;
     const disposition = isImage && req.query.inline === '1'
       ? contentDisposition(path.basename(resolvedFile), { type: 'inline' })
       : contentDisposition(path.basename(resolvedFile));
     res.setHeader('Content-Type', contentType);
     res.setHeader('Content-Length', stat.size);
     res.setHeader('Content-Disposition', disposition);
+    res.setHeader('X-Content-Type-Options', 'nosniff');
     const stream = fs.createReadStream(resolvedFile);
     stream.on('error', (err) => {
       if (!res.headersSent) res.status(500).json({ error: err.message });
       else res.destroy();
     });
+    res.on('close', () => stream.destroy());
     stream.pipe(res);
   } catch (err: any) {
     if (err.code === 'ENOENT') {

@@ -30,10 +30,12 @@ const TEXT_EXTENSIONS = new Set([
   '.makefile', '.dockerfile',
 ]);
 
-export function listDirectory(dirPath: string, showHidden = false): FileEntry[] {
-  // Inline boundary check for CodeQL — callers already validate via safePath(),
-  // but CodeQL cannot trace sanitization across function boundaries.
+export function listDirectory(dirPath: string, showHidden = false, allowedRoot?: string): FileEntry[] {
+  // Resolve symlinks so CodeQL sees a clean path for subsequent fs operations
   const realDir = fs.realpathSync(dirPath);
+  if (allowedRoot && realDir !== allowedRoot && !realDir.startsWith(allowedRoot + path.sep)) {
+    throw Object.assign(new Error('Access denied: path outside allowed root'), { code: 'EACCES' });
+  }
   const entries = fs.readdirSync(realDir, { withFileTypes: true });
   return entries
     .filter((e) => showHidden || !e.name.startsWith('.'))
