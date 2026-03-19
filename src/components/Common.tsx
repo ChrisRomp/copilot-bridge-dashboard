@@ -42,11 +42,17 @@ export function formatBytes(bytes: number): string {
 
 export function formatDate(iso: string): string {
   try {
-    const normalized = /[Z+\-]\d{0,4}$/.test(iso) ? iso : iso + 'Z';
+    // Detect an explicit timezone: 'Z'/'z', ±HHMM, or ±HH:MM
+    const hasTimezone = /(Z|z|[+\-]\d{2}(?::?\d{2})?)$/.test(iso);
+    const normalized = hasTimezone ? iso : iso + 'Z';
     const timeFormat = typeof localStorage !== 'undefined'
       ? localStorage.getItem('bridge-time-format') ?? '12'
       : '12';
-    return new Date(normalized).toLocaleString(undefined, {
+    const date = new Date(normalized);
+    if (isNaN(date.getTime())) {
+      return iso;
+    }
+    return date.toLocaleString(undefined, {
       hour12: timeFormat === '12',
       year: 'numeric', month: 'short', day: 'numeric',
       hour: '2-digit', minute: '2-digit',
