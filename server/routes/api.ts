@@ -249,34 +249,45 @@ function toRelativePath(raw: string): string {
   return rel.replace(/^[/\\]+/, '') || '.';
 }
 
+/**
+ * Inline path sanitization that CodeQL can trace through its taint analysis.
+ * Returns the resolved real path if safe, or null if outside ROOT.
+ * Throws ENOENT for non-existent paths so callers can return 404.
+ * This duplicates safePath() logic intentionally — CodeQL cannot trace
+ * through helper functions as sanitizers.
+ */
+function resolveAndValidate(rawPath: string): string | null {
+  // Reject absolute paths that aren't under ROOT before any relativization
+  if (rawPath.startsWith('/') && rawPath !== ROOT && !rawPath.startsWith(ROOT + path.sep)) {
+    return null;
+  }
+  const relPath = toRelativePath(rawPath);
+  // Reject traversal segments before touching the filesystem
+  if (relPath.split(/[/\\]/).includes('..')) return null;
+  const resolved = path.resolve(ROOT, relPath);
+  // Lexical boundary check before any filesystem access
+  if (resolved !== ROOT && !resolved.startsWith(ROOT + path.sep)) return null;
+  // Resolve symlinks and re-verify boundary — let ENOENT propagate for 404
+  const realPath = fs.realpathSync(resolved);
+  if (realPath !== ROOT && !realPath.startsWith(ROOT + path.sep)) return null;
+  return realPath;
+}
+
 // --- File browser ---
 router.get('/files', (req, res) => {
   try {
     const rawPath = queryString(req.query.path);
     const showHidden = req.query.hidden === '1' || req.query.hidden === 'true';
-    // Validate path via safePath() — lexical boundary check then realpath resolution
-    const relPath = toRelativePath(rawPath);
-    const filePath = safePath(path.resolve(ROOT, relPath), ROOT);
+    const filePath = resolveAndValidate(rawPath);
     if (!filePath) {
       res.status(403).json({ error: 'Access denied: path outside bridge home' });
       return;
     }
-    // Lexical boundary check before any filesystem operation on the user-influenced path
-    if (filePath !== ROOT && !filePath.startsWith(ROOT + path.sep)) {
-      res.status(403).json({ error: 'Access denied: path outside bridge home' });
-      return;
-    }
-    // Resolve symlinks and re-check boundary
-    const resolvedFile = fs.realpathSync(filePath);
-    if (resolvedFile !== ROOT && !resolvedFile.startsWith(ROOT + path.sep)) {
-      res.status(403).json({ error: 'Access denied: path outside bridge home' });
-      return;
-    }
-    const stat = fs.statSync(resolvedFile);
+    const stat = fs.statSync(filePath);
     if (stat.isDirectory()) {
-      res.json({ type: 'directory', entries: listDirectory(resolvedFile, showHidden, ROOT) });
-    } else if (isTextFile(resolvedFile)) {
-      const { content, truncated } = readTextFile(resolvedFile);
+      res.json({ type: 'directory', entries: listDirectory(filePath, showHidden, ROOT) });
+    } else if (isTextFile(filePath, ROOT)) {
+      const { content, truncated } = readTextFile(filePath, undefined, ROOT);
       res.json({ type: 'file', content, truncated, mimeType: 'text/plain' });
     } else {
       res.json({ type: 'file', binary: true, size: stat.size });
@@ -297,29 +308,17 @@ router.get('/files/download', (req, res) => {
       res.status(403).json({ error: 'Access denied' });
       return;
     }
-    const relPath = toRelativePath(rawPath);
-    const filePath = safePath(path.resolve(ROOT, relPath), ROOT);
+    const filePath = resolveAndValidate(rawPath);
     if (!filePath) {
       res.status(403).json({ error: 'Access denied' });
       return;
     }
-    // Lexical boundary check before any filesystem operation on the user-influenced path
-    if (filePath !== ROOT && !filePath.startsWith(ROOT + path.sep)) {
-      res.status(403).json({ error: 'Access denied' });
-      return;
-    }
-    // Resolve symlinks and re-check boundary
-    const resolvedFile = fs.realpathSync(filePath);
-    if (resolvedFile !== ROOT && !resolvedFile.startsWith(ROOT + path.sep)) {
-      res.status(403).json({ error: 'Access denied' });
-      return;
-    }
-    const stat = fs.statSync(resolvedFile);
+    const stat = fs.statSync(filePath);
     if (!stat.isFile()) {
       res.status(400).json({ error: 'Not a file' });
       return;
     }
-    const ext = path.extname(resolvedFile).toLowerCase();
+    const ext = path.extname(filePath).toLowerCase();
     const mimeTypes: Record<string, string> = {
       '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
       '.gif': 'image/gif', '.webp': 'image/webp', '.svg': 'image/svg+xml',
@@ -330,13 +329,13 @@ router.get('/files/download', (req, res) => {
     const isSvg = ext === '.svg';
     const isImage = contentType.startsWith('image/') && !isSvg;
     const disposition = isImage && req.query.inline === '1'
-      ? contentDisposition(path.basename(resolvedFile), { type: 'inline' })
-      : contentDisposition(path.basename(resolvedFile));
+      ? contentDisposition(path.basename(filePath), { type: 'inline' })
+      : contentDisposition(path.basename(filePath));
     res.setHeader('Content-Type', contentType);
     res.setHeader('Content-Length', stat.size);
     res.setHeader('Content-Disposition', disposition);
     res.setHeader('X-Content-Type-Options', 'nosniff');
-    const stream = fs.createReadStream(resolvedFile);
+    const stream = fs.createReadStream(filePath);
     stream.on('error', (err) => {
       if (!res.headersSent) res.status(500).json({ error: err.message });
       else res.destroy();

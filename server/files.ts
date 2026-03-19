@@ -58,7 +58,7 @@ export function listDirectory(dirPath: string, showHidden = false, allowedRoot?:
     });
 }
 
-export function isTextFile(filePath: string): boolean {
+export function isTextFile(filePath: string, allowedRoot?: string): boolean {
   const ext = path.extname(filePath).toLowerCase();
   if (BINARY_EXTENSIONS.has(ext)) return false;
 
@@ -82,6 +82,9 @@ export function isTextFile(filePath: string): boolean {
   // Unknown extension — probe first bytes for binary content (null bytes)
   try {
     const realFile = fs.realpathSync(filePath);
+    if (allowedRoot && realFile !== allowedRoot && !realFile.startsWith(allowedRoot + path.sep)) {
+      return false;
+    }
     const fd = fs.openSync(realFile, 'r');
     const buf = Buffer.alloc(512);
     const bytesRead = fs.readSync(fd, buf, 0, 512, 0);
@@ -95,8 +98,11 @@ export function isTextFile(filePath: string): boolean {
   }
 }
 
-export function readTextFile(filePath: string, maxBytes = 1024 * 1024): { content: string; truncated: boolean } {
+export function readTextFile(filePath: string, maxBytes = 1024 * 1024, allowedRoot?: string): { content: string; truncated: boolean } {
   const realFile = fs.realpathSync(filePath);
+  if (allowedRoot && realFile !== allowedRoot && !realFile.startsWith(allowedRoot + path.sep)) {
+    throw Object.assign(new Error('Access denied: path outside allowed root'), { code: 'EACCES' });
+  }
   const stat = fs.statSync(realFile);
   const truncated = stat.size > maxBytes;
   const fd = fs.openSync(realFile, 'r');
