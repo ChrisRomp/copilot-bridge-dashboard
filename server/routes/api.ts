@@ -253,7 +253,7 @@ router.get('/files', (req, res) => {
   try {
     const rawPath = queryString(req.query.path);
     const showHidden = req.query.hidden === '1' || req.query.hidden === 'true';
-    // CodeQL-recommended pattern: resolve relative to root, realpath, then startsWith check
+    // Validate path via safePath() — lexical boundary check then realpath resolution
     const relPath = toRelativePath(rawPath);
     const filePath = safePath(path.resolve(ROOT, relPath), ROOT);
     if (!filePath) {
