@@ -25,6 +25,9 @@ const router = Router();
 // Realpath the root once so symlinked COPILOT_BRIDGE_HOME compares correctly
 // against realpathSync'd file paths in route handlers.
 const ROOT = fs.realpathSync(paths.bridgeHome);
+// Keep the original (possibly symlinked) path so we can accept paths from
+// clients that use the non-realpath'd bridgeHome from /api/meta.
+const BRIDGE_HOME_ALIAS = path.resolve(paths.bridgeHome);
 
 // Rate limiting applied at router level (defense in depth — also applied in index.ts)
 const routerLimiter = rateLimit({
@@ -238,12 +241,15 @@ function queryString(param: unknown): string {
 
 /**
  * Convert user-provided path to a safe relative path under bridge home.
- * Strips bridgeHome prefix if present, removes leading slashes.
+ * Strips bridgeHome prefix (realpath'd or aliased) if present, removes leading slashes.
  */
 function toRelativePath(raw: string): string {
   let rel = raw;
-  if (rel.startsWith(ROOT)) {
+  // Accept both the realpath'd ROOT and the original alias
+  if (rel.startsWith(ROOT + path.sep) || rel === ROOT) {
     rel = rel.slice(ROOT.length);
+  } else if (rel.startsWith(BRIDGE_HOME_ALIAS + path.sep) || rel === BRIDGE_HOME_ALIAS) {
+    rel = rel.slice(BRIDGE_HOME_ALIAS.length);
   }
   // Remove leading slashes so path.resolve treats it as relative to root
   return rel.replace(/^[/\\]+/, '') || '.';
@@ -257,9 +263,11 @@ function toRelativePath(raw: string): string {
  * through helper functions as sanitizers.
  */
 function resolveAndValidate(rawPath: string): string | null {
-  // Reject absolute paths that aren't under ROOT before any relativization
-  if (rawPath.startsWith('/') && rawPath !== ROOT && !rawPath.startsWith(ROOT + path.sep)) {
-    return null;
+  // Reject absolute paths that aren't under ROOT or its alias
+  if (rawPath.startsWith('/')) {
+    const isUnderRoot = rawPath === ROOT || rawPath.startsWith(ROOT + path.sep);
+    const isUnderAlias = rawPath === BRIDGE_HOME_ALIAS || rawPath.startsWith(BRIDGE_HOME_ALIAS + path.sep);
+    if (!isUnderRoot && !isUnderAlias) return null;
   }
   const relPath = toRelativePath(rawPath);
   // Reject traversal segments before touching the filesystem

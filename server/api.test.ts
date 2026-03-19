@@ -1,4 +1,5 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll } from 'vitest';
+import path from 'path';
 
 // Integration tests for the file browser API's access control.
 // These test the actual HTTP endpoints to verify that the server
@@ -10,10 +11,23 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 
 const BASE = 'http://127.0.0.1:9800';
 
-async function fetchApi(path: string): Promise<{ status: number; body: any }> {
-  const res = await fetch(`${BASE}${path}`);
+// Resolved dynamically from the server's /api/meta endpoint
+let BRIDGE_HOME: string;
+
+beforeAll(async () => {
+  const res = await fetch(`${BASE}/api/meta`);
+  const meta = await res.json() as { bridgeHome: string };
+  BRIDGE_HOME = meta.bridgeHome;
+});
+
+async function fetchApi(urlPath: string): Promise<{ status: number; body: any }> {
+  const res = await fetch(`${BASE}${urlPath}`);
   const body = await res.json().catch(() => null);
   return { status: res.status, body };
+}
+
+async function fetchRaw(urlPath: string): Promise<Response> {
+  return fetch(`${BASE}${urlPath}`);
 }
 
 describe('File API access control', () => {
@@ -26,13 +40,14 @@ describe('File API access control', () => {
   });
 
   it('GET /api/files with valid nested path succeeds', async () => {
-    const { status, body } = await fetchApi('/api/files?path=/Users/chris/.copilot-bridge/workspaces');
+    const { status, body } = await fetchApi(`/api/files?path=${encodeURIComponent(path.join(BRIDGE_HOME, 'workspaces'))}`);
     expect(status).toBe(200);
     expect(body.type).toBe('directory');
   });
 
   it('rejects path outside bridge home (parent dir)', async () => {
-    const { status, body } = await fetchApi('/api/files?path=/Users/chris');
+    const parent = path.dirname(BRIDGE_HOME);
+    const { status, body } = await fetchApi(`/api/files?path=${encodeURIComponent(parent)}`);
     expect(status).toBe(403);
     expect(body.error).toMatch(/access denied/i);
   });
@@ -45,7 +60,7 @@ describe('File API access control', () => {
 
   it('rejects path traversal attack with ..', async () => {
     const { status, body } = await fetchApi(
-      '/api/files?path=/Users/chris/.copilot-bridge/workspaces/../../.ssh',
+      `/api/files?path=${encodeURIComponent(path.join(BRIDGE_HOME, 'workspaces', '..', '..', '.ssh'))}`,
     );
     expect(status).toBe(403);
     expect(body.error).toMatch(/access denied/i);
@@ -57,9 +72,9 @@ describe('File API access control', () => {
     expect(body.error).toMatch(/access denied/i);
   });
 
-  it('rejects prefix-collision path (.copilot-bridge-evil)', async () => {
+  it('rejects prefix-collision path', async () => {
     const { status, body } = await fetchApi(
-      '/api/files?path=/Users/chris/.copilot-bridge-evil',
+      `/api/files?path=${encodeURIComponent(BRIDGE_HOME + '-evil')}`,
     );
     expect(status).toBe(403);
     expect(body.error).toMatch(/access denied/i);
@@ -75,7 +90,7 @@ describe('File API access control', () => {
 
   it('rejects download with path traversal', async () => {
     const { status, body } = await fetchApi(
-      '/api/files/download?path=/Users/chris/.copilot-bridge/../.ssh/id_rsa',
+      `/api/files/download?path=${encodeURIComponent(path.join(BRIDGE_HOME, '..', '.ssh', 'id_rsa'))}`,
     );
     expect(status).toBe(403);
     expect(body.error).toMatch(/access denied/i);
@@ -83,23 +98,15 @@ describe('File API access control', () => {
 
   it('returns 404 for non-existent path within bridge home', async () => {
     const { status } = await fetchApi(
-      '/api/files?path=/Users/chris/.copilot-bridge/nonexistent_xyz',
+      `/api/files?path=${encodeURIComponent(path.join(BRIDGE_HOME, 'nonexistent_xyz_test'))}`,
     );
     expect(status).toBe(404);
   });
 });
 
-// --- Download endpoint tests ---
-// These need a known file to exist within bridge home.
-// We use the config file which always exists.
-
-async function fetchRaw(path: string): Promise<Response> {
-  return fetch(`${BASE}${path}`);
-}
-
 describe('File download endpoint', () => {
   it('downloads a valid file with correct headers', async () => {
-    const res = await fetchRaw('/api/files/download?path=/Users/chris/.copilot-bridge/config.json');
+    const res = await fetchRaw(`/api/files/download?path=${encodeURIComponent(path.join(BRIDGE_HOME, 'config.json'))}`);
     expect(res.status).toBe(200);
     expect(res.headers.get('content-type')).toBe('application/octet-stream');
     expect(res.headers.get('content-disposition')).toMatch(/attachment/);
@@ -108,7 +115,7 @@ describe('File download endpoint', () => {
   });
 
   it('rejects directory download with 400', async () => {
-    const res = await fetchRaw('/api/files/download?path=/Users/chris/.copilot-bridge/workspaces');
+    const res = await fetchRaw(`/api/files/download?path=${encodeURIComponent(path.join(BRIDGE_HOME, 'workspaces'))}`);
     expect(res.status).toBe(400);
     const body = await res.json();
     expect(body.error).toMatch(/not a file/i);
@@ -120,7 +127,7 @@ describe('File download endpoint', () => {
   });
 
   it('returns 404 for non-existent file download', async () => {
-    const res = await fetchRaw('/api/files/download?path=/Users/chris/.copilot-bridge/nonexistent_file.txt');
+    const res = await fetchRaw(`/api/files/download?path=${encodeURIComponent(path.join(BRIDGE_HOME, 'nonexistent_file_test.txt'))}`);
     expect(res.status).toBe(404);
   });
 });

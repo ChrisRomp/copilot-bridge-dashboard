@@ -41,7 +41,8 @@ export function listDirectory(dirPath: string, showHidden = false, allowedRoot?:
     .filter((e) => showHidden || !e.name.startsWith('.'))
     .map((entry) => {
       const fullPath = path.join(realDir, entry.name);
-      const stat = fs.statSync(fullPath);
+      // Use lstatSync to avoid following symlinks that could point outside allowedRoot
+      const stat = fs.lstatSync(fullPath);
       const ext = path.extname(entry.name).toLowerCase();
       return {
         name: entry.name,
