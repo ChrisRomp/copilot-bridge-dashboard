@@ -42,10 +42,11 @@ export function formatBytes(bytes: number): string {
 
 export function formatDate(iso: string): string {
   try {
+    const normalized = /[Z+\-]\d{0,4}$/.test(iso) ? iso : iso + 'Z';
     const timeFormat = typeof localStorage !== 'undefined'
       ? localStorage.getItem('bridge-time-format') ?? '12'
       : '12';
-    return new Date(iso).toLocaleString(undefined, {
+    return new Date(normalized).toLocaleString(undefined, {
       hour12: timeFormat === '12',
       year: 'numeric', month: 'short', day: 'numeric',
       hour: '2-digit', minute: '2-digit',

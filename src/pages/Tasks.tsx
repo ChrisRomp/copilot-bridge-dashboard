@@ -112,9 +112,7 @@ export function Tasks() {
                     </Badge>
                   </td>
                   <td style={{ fontSize: 13, whiteSpace: 'nowrap' }}>
-                    {entry.fired_at
-                      ? formatDate(entry.fired_at.endsWith('Z') ? entry.fired_at : entry.fired_at + 'Z')
-                      : '—'}
+                    {entry.fired_at ? formatDate(entry.fired_at) : '—'}
                   </td>
                   <td
                     style={{
