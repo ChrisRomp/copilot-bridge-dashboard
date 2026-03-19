@@ -42,9 +42,10 @@ export function formatBytes(bytes: number): string {
 
 export function formatDate(iso: string): string {
   try {
-    // Detect an explicit timezone: 'Z'/'z', ±HHMM, or ±HH:MM
-    const hasTimezone = /(Z|z|[+\-]\d{2}(?::?\d{2})?)$/.test(iso);
-    const normalized = hasTimezone ? iso : iso + 'Z';
+    // Normalize input and detect an explicit timezone: 'Z'/'z', ±HHMM, or ±HH:MM
+    const trimmed = iso.trim();
+    const hasTimezone = /(Z|z|[+\-]\d{2}:?\d{2})$/.test(trimmed);
+    const normalized = hasTimezone ? trimmed.replace(/z$/, 'Z') : trimmed + 'Z';
     const timeFormat = typeof localStorage !== 'undefined'
       ? localStorage.getItem('bridge-time-format') ?? '12'
       : '12';
