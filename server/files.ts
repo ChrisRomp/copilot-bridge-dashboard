@@ -107,23 +107,28 @@ export function readTextFile(filePath: string, maxBytes = 1024 * 1024): { conten
  */
 export function safePath(requestedPath: string, allowedRoot: string): string | null {
   if (!requestedPath || !path.isAbsolute(requestedPath)) return null;
+  // Normalize to resolve . segments and collapse separators
+  const normalized = path.normalize(requestedPath);
   // Check for '..' path segments (segment-based to avoid false positives on filenames like my..notes.txt)
-  const segments = path.normalize(requestedPath).split(path.sep);
+  const segments = normalized.split(path.sep);
   if (segments.includes('..')) return null;
-  // Resolve symlinks to prevent escape via symlinked directories
-  let resolved: string;
-  try {
-    resolved = fs.realpathSync(requestedPath);
-  } catch {
-    // Path doesn't exist yet (e.g., upload target) — fall back to lexical resolve
-    resolved = path.resolve(requestedPath);
-  }
+  // Resolve the allowed root
   let root: string;
   try {
     root = fs.realpathSync(allowedRoot);
   } catch {
-    // Root doesn't exist — fall back to lexical resolve
     root = path.resolve(allowedRoot);
+  }
+  // Lexical boundary check BEFORE any filesystem operation on the requested path.
+  // This prevents path injection by ensuring the path is within root before touching disk.
+  if (normalized !== root && !normalized.startsWith(root + path.sep)) return null;
+  // Resolve symlinks to prevent escape via symlinked directories
+  let resolved: string;
+  try {
+    resolved = fs.realpathSync(normalized);
+  } catch {
+    // Path doesn't exist yet (e.g., upload target) — fall back to lexical resolve
+    resolved = path.resolve(normalized);
   }
   if (resolved === root || resolved.startsWith(root + path.sep)) return resolved;
   return null;
