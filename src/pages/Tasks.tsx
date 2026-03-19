@@ -29,12 +29,10 @@ export function Tasks() {
           <table className="data-table">
             <thead>
               <tr>
-                <th>ID</th>
                 <th>Description</th>
                 <th>Bot</th>
                 <th>Type</th>
                 <th>Schedule</th>
-                <th>Timezone</th>
                 <th>Enabled</th>
                 <th>Last Run</th>
                 <th>Next Run</th>
@@ -43,18 +41,22 @@ export function Tasks() {
             <tbody>
               {tasks.map((task: any) => (
                 <tr key={task.id}>
-                  <td style={{ fontFamily: 'monospace', fontSize: 13 }}>{task.id}</td>
                   <td>{task.description ?? '—'}</td>
                   <td>{task.bot_name ?? '—'}</td>
                   <td>
                     <Badge type="info">
-                      {task.cron ? 'cron' : 'one-off'}
+                      {task.cron_expr ? 'cron' : 'one-off'}
                     </Badge>
                   </td>
-                  <td style={{ fontFamily: 'monospace', fontSize: 13 }}>
-                    {task.cron ?? task.run_at ?? '—'}
+                  <td>
+                    {task.cron_expr ? (
+                      <code style={{ background: 'var(--bg-hover)', padding: '2px 8px', borderRadius: 4, fontSize: 13 }}>
+                        {task.cron_expr}
+                      </code>
+                    ) : task.run_at ? (
+                      <span style={{ fontSize: 13 }}>{formatDate(task.run_at)}</span>
+                    ) : '—'}
                   </td>
-                  <td>{task.timezone ?? '—'}</td>
                   <td>
                     <Badge type={task.enabled === 1 || task.enabled === true ? 'success' : 'error'}>
                       {task.enabled === 1 || task.enabled === true ? 'Enabled' : 'Disabled'}
