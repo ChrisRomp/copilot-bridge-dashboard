@@ -292,6 +292,10 @@ router.get('/files/download', (req, res) => {
       return;
     }
     const stat = fs.statSync(filePath);
+    if (!stat.isFile()) {
+      res.status(400).json({ error: 'Not a file' });
+      return;
+    }
     const ext = path.extname(filePath).toLowerCase();
     const mimeTypes: Record<string, string> = {
       '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
@@ -301,13 +305,19 @@ router.get('/files/download', (req, res) => {
     const contentType = mimeTypes[ext] ?? 'application/octet-stream';
     // Inline display for images, attachment for everything else
     const isImage = contentType.startsWith('image/');
+    const basename = path.basename(filePath).replace(/"/g, '\\"');
     const disposition = isImage && req.query.inline === '1'
       ? 'inline'
-      : `attachment; filename="${path.basename(filePath)}"`;
+      : `attachment; filename="${basename}"`;
     res.setHeader('Content-Type', contentType);
     res.setHeader('Content-Length', stat.size);
     res.setHeader('Content-Disposition', disposition);
-    fs.createReadStream(filePath).pipe(res);
+    const stream = fs.createReadStream(filePath);
+    stream.on('error', (err) => {
+      if (!res.headersSent) res.status(500).json({ error: err.message });
+      else res.destroy();
+    });
+    stream.pipe(res);
   } catch (err: any) {
     if (err.code === 'ENOENT') {
       res.status(404).json({ error: 'Not found' });
