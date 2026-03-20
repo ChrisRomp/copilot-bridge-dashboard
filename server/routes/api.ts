@@ -305,9 +305,13 @@ router.get('/files/download', (req, res) => {
     const inline = isSafeImage && req.query.inline === '1';
 
     const stream = fs.createReadStream(filePath);
-    stream.on('error', (err) => {
-      if (!res.headersSent) res.status(500).json({ error: err.message });
-      else res.destroy();
+    stream.on('error', (err: NodeJS.ErrnoException) => {
+      if (!res.headersSent) {
+        const status = err.code === 'ENOENT' ? 404 : 500;
+        res.status(status).json({ error: err.code === 'ENOENT' ? 'Not found' : err.message });
+      } else {
+        res.destroy();
+      }
     });
     // Set headers after stream opens successfully
     stream.once('open', () => {

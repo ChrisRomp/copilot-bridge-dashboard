@@ -1,5 +1,6 @@
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import path from 'path';
+import fs from 'fs';
 
 // Integration tests for the file browser API.
 // Tests the HTTP endpoints for basic functionality and path traversal protection.
@@ -27,6 +28,13 @@ async function fetchHead(urlPath: string): Promise<{ status: number; headers: He
 let BRIDGE_HOME: string;
 let VALID_CHILD: string;
 let DOWNLOADABLE_FILE: string | null;
+let TEST_IMAGE: string | null = null;
+
+// Minimal 1x1 red PNG (68 bytes)
+const TINY_PNG = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==',
+  'base64',
+);
 
 describe('File API', () => {
   beforeAll(async () => {
@@ -38,6 +46,15 @@ describe('File API', () => {
     VALID_CHILD = dir?.path ?? path.join(BRIDGE_HOME, 'workspaces');
     const file = body.entries.find((e: any) => e.type === 'file');
     DOWNLOADABLE_FILE = file?.path ?? null;
+    // Create a temporary test image inside bridge home
+    TEST_IMAGE = path.join(BRIDGE_HOME, '_test_image_.png');
+    fs.writeFileSync(TEST_IMAGE, TINY_PNG);
+  });
+
+  afterAll(() => {
+    if (TEST_IMAGE) {
+      try { fs.unlinkSync(TEST_IMAGE); } catch {}
+    }
   });
 
   describe('file listing', () => {
@@ -118,6 +135,16 @@ describe('File API', () => {
       expect(status).toBe(200);
       // Non-image files should still get attachment disposition
       expect(headers.get('content-disposition')).toMatch(/attachment/);
+    });
+
+    it('serves inline disposition for image with ?inline=1', async () => {
+      expect(TEST_IMAGE).toBeTruthy();
+      const { status, headers } = await fetchHead(
+        `/api/files/download?path=${encodeURIComponent(TEST_IMAGE!)}&inline=1`,
+      );
+      expect(status).toBe(200);
+      expect(headers.get('content-disposition')).toMatch(/inline/);
+      expect(headers.get('content-type')).toBe('image/png');
     });
   });
 });
