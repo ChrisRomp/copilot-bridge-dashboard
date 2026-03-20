@@ -8,7 +8,8 @@ let tmpRoot: string;
 
 beforeAll(() => {
   // Create a temp directory tree to test against (works on any OS / CI)
-  tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'bridge-test-'));
+  // Use realpathSync to resolve macOS /var → /private/var symlink
+  tmpRoot = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'bridge-test-')));
   fs.mkdirSync(path.join(tmpRoot, 'workspaces', 'copilot'), { recursive: true });
   fs.writeFileSync(path.join(tmpRoot, 'config.json'), '{}');
 });
