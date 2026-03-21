@@ -53,8 +53,6 @@ export function Tasks() {
                       <code style={{ background: 'var(--bg-hover)', padding: '2px 8px', borderRadius: 4, fontSize: 13 }}>
                         {task.cron_expr}
                       </code>
-                    ) : task.run_at ? (
-                      <span style={{ fontSize: 13 }}>{formatDate(task.run_at)}</span>
                     ) : '—'}
                   </td>
                   <td>
